@@ -244,7 +244,13 @@ function AccountMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
 }
 
 export function WorkspaceShell() {
-  const [workspace, setWorkspace] = useState(workspaces[0]);
+  const [workspace, setWorkspace] = useState<Workspace>(() => {
+    const initialWorkspace = workspaces[0];
+    if (!initialWorkspace) {
+      throw new Error("At least one workspace is required");
+    }
+    return initialWorkspace;
+  });
   const [projectsByWorkspace, setProjectsByWorkspace] = useState<Record<string, Project[]>>(() => Object.fromEntries(workspaces.map((item) => [item.id, item.projects])));
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
