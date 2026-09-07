@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowDownUp,
@@ -84,6 +84,7 @@ function SidebarContent({
   onCommand,
   onCreate,
   onAccount,
+  onConnectors,
 }: {
   collapsed: boolean;
   onCollapse: () => void;
@@ -96,6 +97,7 @@ function SidebarContent({
   onCommand: () => void;
   onCreate: () => void;
   onAccount: () => void;
+  onConnectors: () => void;
 }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(true);
@@ -150,6 +152,7 @@ function SidebarContent({
           <Tooltip><TooltipTrigger asChild><Button variant="ghost" className={navButton(true)} onClick={() => setFilter("all")}><LayoutDashboard className="size-4 shrink-0" />{!collapsed && <span>Dashboard</span>}</Button></TooltipTrigger>{collapsed && <TooltipContent side="right">Dashboard</TooltipContent>}</Tooltip>
           <Tooltip><TooltipTrigger asChild><Button variant="ghost" className={navButton(false)} onClick={onCommand}><Search className="size-4 shrink-0" />{!collapsed && <><span>Search</span><span className="ml-auto shortcut">⌘ K</span></>}</Button></TooltipTrigger>{collapsed && <TooltipContent side="right">Search</TooltipContent>}</Tooltip>
           <Tooltip><TooltipTrigger asChild><Button variant="ghost" className={navButton(false)} onClick={onNotifications}><Inbox className="size-4 shrink-0" />{!collapsed && <><span>Inbox</span><span className="notification-dot" /></>}</Button></TooltipTrigger>{collapsed && <TooltipContent side="right">Inbox</TooltipContent>}</Tooltip>
+          <Tooltip><TooltipTrigger asChild><Button variant="ghost" className={navButton(false)} onClick={onConnectors}><PlugZap className="size-4 shrink-0" />{!collapsed && <span>Connectors</span>}</Button></TooltipTrigger>{collapsed && <TooltipContent side="right">Connectors</TooltipContent>}</Tooltip>
         </TooltipProvider>
 
         <div className="sidebar-section-row mt-5">
@@ -239,6 +242,10 @@ function NotificationPanel({ open, onOpenChange }: { open: boolean; onOpenChange
   return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="notification-panel"><SheetHeader><SheetTitle>Inbox</SheetTitle><SheetDescription>Updates from your workspaces and projects.</SheetDescription></SheetHeader><div className="notification-tabs"><Button variant="ghost" className="notification-tab notification-tab-active">All <span>2</span></Button><Button variant="ghost" className="notification-tab">Mentions</Button></div><div className="notification-list"><div className="notification-item"><div className="notification-icon notification-icon-blue"><Users className="size-4" /></div><div className="min-w-0 flex-1"><p><strong>Maya shared</strong> Accountability Room with you</p><span>2 hours ago</span></div><span className="notification-unread" /></div><div className="notification-item"><div className="notification-icon notification-icon-amber"><Sparkles className="size-4" /></div><div className="min-w-0 flex-1"><p>Your free plan has <strong>40 credits</strong> remaining</p><span>Yesterday</span></div></div><div className="notification-item"><div className="notification-icon notification-icon-muted"><ShieldCheck className="size-4" /></div><div className="min-w-0 flex-1"><p>Your workspace security settings are up to date</p><span>Aug 28</span></div></div></div><div className="notification-empty"><Check className="size-4" /> You’re all caught up</div></SheetContent></Sheet>;
 }
 
+function ConnectorsPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="notification-panel"><SheetHeader><SheetTitle>Connectors</SheetTitle><SheetDescription>Bring your tools into one focused workspace.</SheetDescription></SheetHeader><div className="connector-list"><div className="connector-item"><div className="connector-logo connector-logo-github">GH</div><div className="min-w-0 flex-1"><p>GitHub</p><span>Repositories and issues</span></div><Button variant="outline" size="sm" disabled>Later</Button></div><div className="connector-item"><div className="connector-logo connector-logo-notion">N</div><div className="min-w-0 flex-1"><p>Notion</p><span>Pages and databases</span></div><Button variant="outline" size="sm" disabled>Later</Button></div><div className="connector-note"><PlugZap className="size-4" /><span>Connections will be enabled in a later phase. Your local workspace is safe to use now.</span></div></div></SheetContent></Sheet>;
+}
+
 function AccountMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent side="left" className="account-panel"><SheetHeader><div className="account-panel-avatar">JW</div><SheetTitle>Joshua Wilson</SheetTitle><SheetDescription>joshua@example.com</SheetDescription></SheetHeader><div className="account-panel-actions"><Link to="/settings" className="account-menu-link" onClick={() => onOpenChange(false)}><Settings />Account settings</Link><Button variant="ghost" className="account-menu-link"><Sparkles />Appearance</Button><Button variant="ghost" className="account-menu-link"><HelpCircle />Help center</Button><div className="my-2 border-t border-border" /><Button variant="ghost" className="account-menu-link text-destructive"><LogOut />Sign out</Button></div></SheetContent></Sheet>;
 }
@@ -263,8 +270,31 @@ export function WorkspaceShell() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [connectorsOpen, setConnectorsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        setCreateOpen(true);
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key === ".") {
+        event.preventDefault();
+        setAccountOpen(true);
+      }
+      if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        setCollapsed((current) => !current);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const projects = projectsByWorkspace[workspace.id] ?? [];
   const visibleProjects = useMemo(() => {
@@ -287,8 +317,8 @@ export function WorkspaceShell() {
   const toggleStar = (id: string) => setProjectsByWorkspace((current) => ({ ...current, [workspace.id]: (current[workspace.id] ?? []).map((project) => project.id === id ? { ...project, starred: !project.starred } : project) }));
 
   return <TooltipProvider delayDuration={300}><div className="workspace-app">
-    <aside className={cn("app-sidebar", collapsed && "app-sidebar-collapsed")}><SidebarContent collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} workspace={workspace} setWorkspace={selectWorkspace} filter={filter} setFilter={setFilter} projects={projects} onNotifications={() => setNotificationsOpen(true)} onCommand={() => setCommandOpen(true)} onCreate={() => setCreateOpen(true)} onAccount={() => setAccountOpen(true)} /></aside>
-    <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}><SheetContent side="left" className="mobile-sidebar"><SheetHeader className="sr-only"><SheetTitle>Workspace navigation</SheetTitle><SheetDescription>Navigate between your dashboard, projects, and workspace tools.</SheetDescription></SheetHeader><SidebarContent collapsed={false} onCollapse={() => setMobileNavOpen(false)} workspace={workspace} setWorkspace={selectWorkspace} filter={filter} setFilter={setFilter} projects={projects} onNotifications={() => { setMobileNavOpen(false); setNotificationsOpen(true); }} onCommand={() => { setMobileNavOpen(false); setCommandOpen(true); }} onCreate={() => { setMobileNavOpen(false); setCreateOpen(true); }} onAccount={() => { setMobileNavOpen(false); setAccountOpen(true); }} /></SheetContent></Sheet>
+    <aside className={cn("app-sidebar", collapsed && "app-sidebar-collapsed")}><SidebarContent collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} workspace={workspace} setWorkspace={selectWorkspace} filter={filter} setFilter={setFilter} projects={projects} onNotifications={() => setNotificationsOpen(true)} onCommand={() => setCommandOpen(true)} onCreate={() => setCreateOpen(true)} onAccount={() => setAccountOpen(true)} onConnectors={() => setConnectorsOpen(true)} /></aside>
+    <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}><SheetContent side="left" className="mobile-sidebar"><SheetHeader className="sr-only"><SheetTitle>Workspace navigation</SheetTitle><SheetDescription>Navigate between your dashboard, projects, and workspace tools.</SheetDescription></SheetHeader><SidebarContent collapsed={false} onCollapse={() => setMobileNavOpen(false)} workspace={workspace} setWorkspace={selectWorkspace} filter={filter} setFilter={setFilter} projects={projects} onNotifications={() => { setMobileNavOpen(false); setNotificationsOpen(true); }} onCommand={() => { setMobileNavOpen(false); setCommandOpen(true); }} onCreate={() => { setMobileNavOpen(false); setCreateOpen(true); }} onAccount={() => { setMobileNavOpen(false); setAccountOpen(true); }} onConnectors={() => { setMobileNavOpen(false); setConnectorsOpen(true); }} /></SheetContent></Sheet>
     <main className="workspace-main">
       <header className="workspace-topbar"><div className="flex min-w-0 items-center gap-2"><Button variant="ghost" size="icon" className="mobile-menu-button" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><Menu className="size-5" /></Button><div className="mobile-topbar-logo"><LogoMark /></div><Button variant="ghost" className="topbar-search" onClick={() => setCommandOpen(true)}><Search className="size-4" /><span className="hidden sm:inline">Search projects, folders, settings</span><span className="topbar-search-key">⌘ K</span></Button></div><div className="topbar-actions"><Button variant="ghost" size="icon" className="topbar-icon-button hidden sm:inline-flex" onClick={() => setNotificationsOpen(true)} aria-label="Open inbox"><Inbox className="size-4" /><span className="topbar-unread" /></Button><Button variant="ghost" size="icon" className="topbar-icon-button hidden sm:inline-flex" aria-label="What's new"><Sparkles className="size-4" /></Button><Button className="topbar-create" onClick={() => setCreateOpen(true)}><Plus /> <span className="hidden sm:inline">New project</span></Button><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="topbar-avatar" aria-label="Open account menu"><span>JW</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56"><DropdownMenuItem><UserRound />Joshua Wilson</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem asChild><Link to="/settings"><Settings />Account settings</Link></DropdownMenuItem><DropdownMenuItem><Sparkles />Appearance</DropdownMenuItem><DropdownMenuItem><HelpCircle />Help center</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive focus:text-destructive"><LogOut />Sign out</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></header>
 
@@ -304,6 +334,6 @@ export function WorkspaceShell() {
         <div className="dashboard-footer"><CircleAlert className="size-3.5" /> Mock workspace data · No connections enabled <span>•</span><a href="https://docs.lovable.dev/" target="_blank" rel="noreferrer">Documentation <ExternalLink className="size-3" /></a></div>
       </section></div>
     </main>
-    <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} onCreate={addProject} /><CommandDialog open={commandOpen} onOpenChange={setCommandOpen} projects={projects} /><NotificationPanel open={notificationsOpen} onOpenChange={setNotificationsOpen} /><AccountMenu open={accountOpen} onOpenChange={setAccountOpen} />
+    <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} onCreate={addProject} /><CommandDialog open={commandOpen} onOpenChange={setCommandOpen} projects={projects} /><NotificationPanel open={notificationsOpen} onOpenChange={setNotificationsOpen} /><ConnectorsPanel open={connectorsOpen} onOpenChange={setConnectorsOpen} /><AccountMenu open={accountOpen} onOpenChange={setAccountOpen} />
   </div></TooltipProvider>;
 }
