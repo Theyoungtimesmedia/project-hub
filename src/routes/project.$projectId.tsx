@@ -57,7 +57,7 @@ function ProjectWorkspace() {
   const [surface, setSurface] = useState<Surface>("Preview");
   const [mode, setMode] = useState<Mode>("Build");
   const [message, setMessage] = useState("");
-  const [selectedFile, setSelectedFile] = useState(files[0]);
+  const [selectedFile, setSelectedFile] = useState(files[0] ?? "src/pages/Index.tsx");
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
