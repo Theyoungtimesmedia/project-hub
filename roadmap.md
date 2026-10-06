@@ -1,0 +1,17 @@
+- [x] Rebuild compact white project editor shell and chat composer
+- [x] Consolidate preview controls and toggle behavior
+- [x] Rework More, Settings, Code, Files, and History surfaces
+- [x] Verify desktop/mobile interactions and diagnostics
+- [x] Add focused daily-workflow actions without disturbing the editor layout
+- [x] Add dashboard return drawer and selected-element chat context handoff
+- [x] Polish typography, icon weight, focus states, and code surface details
+- [x] Make preview device control cycle Desktop → Mobile → Tablet and update its icon
+- [x] Refine editor with liquid-glass white surfaces, curved toolbar controls, and lighter code panels
+- [x] Add local Git connector status and sync actions inside Project settings
+- [x] Expand Lovable Cloud resources with local tabs and resource states
+- [x] Add Firecrawl connector setup and simulated crawl workflow
+- [ ] Add interactive plan review in chat and preview
+- [ ] Add secret and decision widgets in chat
+- [ ] Add build details diff drawer and per-turn preview
+- [ ] Add previous-version preview and restore state
+- [ ] Add Supabase connector setup simulation
