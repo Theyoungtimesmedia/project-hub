@@ -15,3 +15,6 @@
 - [ ] Add build details diff drawer and per-turn preview
 - [ ] Add previous-version preview and restore state
 - [ ] Add Supabase connector setup simulation
+- [ ] Refine active-only toolbar labels and Share/Publish dialogs
+- [ ] Expand SEO, Security, AI, Analytics, Cloud, and Skills controls
+- [ ] Verify the contextual editor flows and small-screen layout
