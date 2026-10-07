@@ -15,3 +15,6 @@
 - Organize feature UI by dashboard and editor domains, with shared controls in `src/components/ui`, to preserve clear boundaries as the prototype grows.
 
 - The root route intentionally opens the frontend-only project editor; the dashboard is retained as a separate feature module but is not the current entry experience.
+
+- Keep contextual editor controls and expanded More pages in dedicated editor modules; share plan, snapshot, and skill enablement state through the editor owner so chat and canvas remain consistent.
+- Credential forms are explicit disposable demos: clear submitted values and never persist or claim encryption for frontend-only secrets.
