@@ -54,7 +54,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const [headline, setHeadline] = useState("Money, made clear.");
   const [versionId, setVersionId] = useState<number | null>(null);
   const [skillIndex, setSkillIndex] = useState(0);
-  const [enabledSkills, setEnabledSkills] = useState(skills.map(skill => skill.command));
+  const [enabledSkills, setEnabledSkills] = useState(skills.filter(skill => !skill.draft).map(skill => skill.command));
   const [previewVersion, setPreviewVersion] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 

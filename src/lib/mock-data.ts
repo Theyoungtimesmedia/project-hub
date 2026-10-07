@@ -25,6 +25,7 @@ export const skills = [
   { command: "/seo-reviews", title: "SEO review", detail: "Audit metadata, structure, and search previews" },
   { command: "/skill-creation", title: "Skill creation", detail: "Create a reusable workspace playbook" },
   { command: "/video-creation", title: "Video creation", detail: "Produce a polished product walkthrough" },
+  { command: "/release-review", title: "Release review", detail: "Review the release checklist before publication", draft: true },
 ];
 
 export type Surface = "preview" | "code" | "files" | "history" | "cloud" | "ai" | "agents" | "connectors" | "analytics" | "seo" | "security" | "payments" | "settings" | "logs";
