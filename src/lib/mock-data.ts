@@ -28,4 +28,12 @@ export const skills = [
   { command: "/release-review", title: "Release review", detail: "Review the release checklist before publication", draft: true },
 ];
 
+export function getDefaultSkillCommands() {
+  return skills.filter(skill => !skill.draft).map(skill => skill.command);
+}
+
+export function getAvailableSkills(enabled: string[], query: string) {
+  return skills.filter(skill => enabled.includes(skill.command) && `${skill.command} ${skill.title}`.toLowerCase().includes(query.toLowerCase()));
+}
+
 export type Surface = "preview" | "code" | "files" | "history" | "cloud" | "ai" | "agents" | "connectors" | "analytics" | "seo" | "security" | "payments" | "settings" | "logs";

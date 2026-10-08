@@ -354,16 +354,26 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .history-entry b { white-space:normal; line-height:1.5; }
 .history-entry small { font-size:9px; }
 .settings-scroll .expanded-page { padding:0; }
+.editor-light button[data-variant="send"] { color:var(--background); }
+.editor-light button[data-variant="editorActive"],.editor-light button[data-variant="primary"],.editor-light button[data-variant="publish"] { color:var(--primary-foreground); }
+.feature-tabs { flex-wrap:wrap; }
+.more-sidebar button { position:relative; }
+.more-sidebar button:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
 @media(max-width:1050px) { .plan-document { grid-template-columns:minmax(0,1fr); } .plan-document>aside { border-left:0; border-top:1px solid var(--border); padding:18px 30px; } }
 @media(max-width:760px) {
  .editor-topbar { grid-template-columns:minmax(0,1fr) auto; }
  .project-toolbar { margin:0; }
  .editor-top-right .share-trigger,.editor-top-right .publish-trigger { display:inline-flex!important; padding:0 8px; }
- .editor-top-right>.button:last-child { display:none; }
+ .editor-top-right>button:not(.share-trigger):not(.publish-trigger),.editor-top-right .collaborator-avatar { display:none; }
  .project-name-button { max-width:115px; }
  .editor-top-left { gap:0; }
- .editor-top-left>.button { width:25px; }
- .plan-preview,.more-surface,.history-surface,.full-surface,.code-surface { margin-top:39px; }
+ .editor-top-left>button { width:25px; padding:0; }
+ .editor-top-left .project-name-button { width:auto; padding:0 5px; max-width:112px; }
+ .more-surface,.history-surface,.full-surface,.code-surface { margin-top:39px; }
+ .more-sidebar button { padding:0; }
+ .more-sidebar button span { display:none; }
+ .more-sidebar button::after { content:attr(aria-label); position:fixed; left:54px; z-index:100; padding:5px 8px; border:1px solid var(--border); background:var(--popover); color:var(--foreground); font-size:10px; opacity:0; pointer-events:none; }
+ .more-sidebar button:hover::after,.more-sidebar button:focus-visible::after { opacity:1; }
  .plan-preview>header { padding:10px; }
  .plan-markdown { padding:24px 18px; }
  .plan-markdown h1 { font-size:22px; }

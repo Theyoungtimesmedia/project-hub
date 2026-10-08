@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { skills, type Surface } from "@/lib/mock-data";
+import { getAvailableSkills, getDefaultSkillCommands, type Surface } from "@/lib/mock-data";
 import { SurfacePanel } from "./surfaces";
 import { PlanCard, PlanPreview, SecretRequestCard, ChoiceCard, BuildDetailsDrawer, ProjectDialog, initialPlan, type PlanState } from "./contextual";
 
@@ -54,12 +54,12 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const [headline, setHeadline] = useState("Money, made clear.");
   const [versionId, setVersionId] = useState<number | null>(null);
   const [skillIndex, setSkillIndex] = useState(0);
-  const [enabledSkills, setEnabledSkills] = useState(skills.filter(skill => !skill.draft).map(skill => skill.command));
+  const [enabledSkills, setEnabledSkills] = useState(getDefaultSkillCommands);
   const [previewVersion, setPreviewVersion] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const slashQuery = useMemo(() => draft.match(/(?:^|\s)\/(\S*)$/)?.[1] ?? null, [draft]);
-  const filteredSkills = skills.filter((skill) => enabledSkills.includes(skill.command) && slashQuery !== null && `${skill.command} ${skill.title}`.toLowerCase().includes(slashQuery.toLowerCase()));
+  const filteredSkills = slashQuery === null ? [] : getAvailableSkills(enabledSkills, slashQuery);
   const filteredPages = pages.filter((page) => `${page.name} ${page.path}`.toLowerCase().includes(pageSearch.toLowerCase()));
 
   const previewTurn = (message: Message) => { setVersionId(message.id); setPreviewVersion(`Turn ${message.id} · ${message.text}`); setSurface("preview"); setPlanPreview(false); setActiveTool(null); };
