@@ -10,11 +10,11 @@
 - [x] Add local Git connector status and sync actions inside Project settings
 - [x] Expand Lovable Cloud resources with local tabs and resource states
 - [x] Add Firecrawl connector setup and simulated crawl workflow
-- [ ] Add interactive plan review in chat and preview
-- [ ] Add secret and decision widgets in chat
-- [ ] Add build details diff drawer and per-turn preview
-- [ ] Add previous-version preview and restore state
-- [ ] Add Supabase connector setup simulation
-- [ ] Refine active-only toolbar labels and Share/Publish dialogs
-- [ ] Expand SEO, Security, AI, Analytics, Cloud, and Skills controls
-- [ ] Verify the contextual editor flows and small-screen layout
+- [x] Add interactive plan review in chat and preview
+- [x] Add secret and decision widgets in chat
+- [x] Add build details diff drawer and per-turn preview
+- [x] Add previous-version preview and restore state
+- [x] Add Supabase connector setup simulation
+- [x] Refine active-only toolbar labels and Share/Publish dialogs
+- [x] Expand SEO, Security, AI, Analytics, Cloud, and Skills controls
+- [x] Verify the contextual editor flows and small-screen layout
