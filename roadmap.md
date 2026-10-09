@@ -18,3 +18,7 @@
 - [x] Refine active-only toolbar labels and Share/Publish dialogs
 - [x] Expand SEO, Security, AI, Analytics, Cloud, and Skills controls
 - [x] Verify the contextual editor flows and small-screen layout
+- [ ] Match completed-turn Details and Preview controls to the supplied editor reference
+- [ ] Replace the Details popup with a full-height timeline and changes canvas
+- [ ] Add a draggable chat/preview divider and enlarge editor controls
+- [ ] Refine More navigation alignment and enforce the editor’s light styling
