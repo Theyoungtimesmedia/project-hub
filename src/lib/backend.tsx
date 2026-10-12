@@ -21,6 +21,8 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   request: <T>(path: string, init?: RequestInit) => Promise<T>;
   upload: (path: string, file: File) => Promise<void>;
+  download: (path: string) => Promise<Blob>;
+  invoke: <T>(name: string, body: unknown) => Promise<T>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -157,7 +159,32 @@ export function BackendProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const value = useMemo(() => ({ configured, session, loading, error, signIn, signUp, signOut, request, upload }), [configured, session, loading, error, signIn, signUp, signOut, request, upload]);
+  const download = useCallback(async (path: string) => {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Supabase is not configured.");
+    const current = readStoredSession();
+    if (!current) throw new Error("Sign in before downloading project files.");
+    const response = await fetch(`${SUPABASE_URL}/storage/v1/object/authenticated/project-files/${path.split("/").map(encodeURIComponent).join("/")}`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${current.access_token}` },
+    });
+    if (!response.ok) throw new Error("Could not download this project file.");
+    return response.blob();
+  }, []);
+
+  const invoke = useCallback(async <T,>(name: string, body: unknown): Promise<T> => {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Supabase is not configured.");
+    const current = readStoredSession();
+    if (!current) throw new Error("Sign in before running project actions.");
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${current.access_token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) throw new Error(String(data.error ?? data.message ?? `Function ${name} failed (${response.status}).`));
+    return data as T;
+  }, []);
+
+  const value = useMemo(() => ({ configured, session, loading, error, signIn, signUp, signOut, request, upload, download, invoke }), [configured, session, loading, error, signIn, signUp, signOut, request, upload, download, invoke]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
