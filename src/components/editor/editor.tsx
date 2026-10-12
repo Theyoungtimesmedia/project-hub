@@ -12,7 +12,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useBackend } from "@/lib/backend";
-import { getAvailableSkills, getDefaultSkillCommands, type Surface } from "@/lib/mock-data";
+import type { Surface } from "@/lib/mock-data";
 import { SurfacePanel } from "./surfaces";
 import { PlanCard, PlanPreview, SecretRequestCard, ChoiceCard, BuildDetailsDrawer, ProjectDialog, type PlanState } from "./contextual";
 
@@ -58,12 +58,13 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const headline = projectName;
   const [versionId, setVersionId] = useState<number | null>(null);
   const [skillIndex, setSkillIndex] = useState(0);
-  const [enabledSkills, setEnabledSkills] = useState(getDefaultSkillCommands);
+  const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
+  const [skillCommands, setSkillCommands] = useState<Array<{ command: string; title: string; detail: string; instructions?: string }>>([]);
   const [previewVersion, setPreviewVersion] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const slashQuery = useMemo(() => draft.match(/(?:^|\s)\/(\S*)$/)?.[1] ?? null, [draft]);
-  const filteredSkills = slashQuery === null ? [] : getAvailableSkills(enabledSkills, slashQuery);
+  const filteredSkills = slashQuery === null ? [] : skillCommands.filter(skill => enabledSkills.includes(skill.command) && (skill.command + " " + skill.title).toLowerCase().includes(slashQuery.toLowerCase()));
   const filteredPages = pages.filter((page) => `${page.name} ${page.path}`.toLowerCase().includes(pageSearch.toLowerCase()));
 
   const previewTurn = (message: Message) => { setVersionId(message.id); setPreviewVersion(`Turn ${message.id} · ${message.text}`); setSurface("preview"); setPlanPreview(false); setActiveTool(null); };
@@ -148,9 +149,16 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     let cancelled = false;
     async function loadProject() {
       try {
-        const projects = await request<Array<{ id: string; name: string }>>("projects?select=id,name&id=eq." + projectId);
+        const projects = await request<Array<{ id: string; name: string }>>("projects?select=id,name,workspace_id&id=eq." + projectId);
         if (!projects[0]) throw new Error("Project not found or access was removed. Return to the workspace and open a project you own or can access.");
         if (!cancelled) setProjectName(projects[0].name);
+        const skillRows = await request<Array<{ command: string; name: string; description: string; instructions: string; is_enabled: boolean }>>(
+          "skills?select=command,name,description,instructions,is_enabled&workspace_id=eq." + projects[0].workspace_id + "&order=name.asc"
+        );
+        if (!cancelled) {
+          setSkillCommands(skillRows.map(skill => ({ command: skill.command, title: skill.name, detail: skill.description, instructions: skill.instructions })));
+          setEnabledSkills(skillRows.filter(skill => skill.is_enabled).map(skill => skill.command));
+        }
         const turns = await request<Array<{ id: string; mode: Mode; prompt: string; summary: string | null; status: string; created_at: string; result_payload: { preview_html?: string | null } | null; plan_payload: Message["planPayload"] }>>(
           "chat_turns?select=id,mode,prompt,summary,status,created_at,result_payload,plan_payload&project_id=eq." + projectId + "&order=created_at.asc"
         );
