@@ -139,7 +139,7 @@ export function BackendProvider({ children }: { children: ReactNode }) {
       headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({ email: email.trim(), password }),
     });
-    const payload = parseResponse(await response.text()) as Record<string, unknown> | null;
+    const payload = parseResponse(await response.text()) as AuthResponse | null;
     if (!response.ok || !payload || typeof payload.access_token !== "string" || typeof payload.refresh_token !== "string" || !payload.user) {
       throw new Error(messageOf(payload, "Could not sign in. Check your email and password."));
     }
@@ -160,7 +160,7 @@ export function BackendProvider({ children }: { children: ReactNode }) {
       headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({ email: email.trim(), password, data: { name: name.trim(), full_name: name.trim() } }),
     });
-    const payload = parseResponse(await response.text()) as Record<string, unknown> | null;
+    const payload = parseResponse(await response.text()) as AuthResponse | null;
     if (!response.ok) throw new Error(messageOf(payload, "Could not create your account."));
     if (payload && typeof payload.access_token === "string" && typeof payload.refresh_token === "string" && payload.user) {
       const expiresIn = Number(payload.expires_in || 3600);
