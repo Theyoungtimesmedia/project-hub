@@ -11,11 +11,9 @@ import { SupabaseSetup, SkillsManager, SeoSurface, AiSurface, SecurityAudit, Ana
 import type { Surface } from "@/lib/mock-data";
 
 const moreNav: { label: string; value: Surface; icon: typeof Cloud }[] = [
-  { label: "Analytics", value: "analytics", icon: BarChart3 }, { label: "Cloud", value: "cloud", icon: Cloud },
-  { label: "AI", value: "ai", icon: Sparkles }, { label: "Agent integrations", value: "agents", icon: Sparkles },
-  { label: "Payments", value: "payments", icon: CreditCard }, { label: "Connectors", value: "connectors", icon: GitBranch },
-  { label: "Security", value: "security", icon: ShieldCheck }, { label: "SEO & AI search", value: "seo", icon: Search },
-  { label: "Settings", value: "settings", icon: Settings },
+  { label: "AI", value: "ai", icon: Sparkles },
+  { label: "Connectors", value: "connectors", icon: GitBranch },
+  { label: "Settings & context", value: "settings", icon: Settings },
 ];
 
 export function SurfacePanel({ projectId, surface, onBack, onSelectSurface, versions, onPreviewVersion, enabledSkills, setEnabledSkills }: { projectId: string; surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; versions: { id: number; text: string }[]; onPreviewVersion: (id: number) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
@@ -161,22 +159,88 @@ function HistorySurface({ onBack, versions, onPreviewVersion }: { onBack: () => 
 
 function MoreSurface({ projectId, surface, onBack, onSelectSurface, enabledSkills, setEnabledSkills }: { projectId: string; surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
   const safeSurface = moreNav.some((item) => item.value === surface) ? surface : "settings";
-  return <div className="more-surface"><aside className="more-sidebar">{moreNav.map(({ label, value, icon: Icon }) => <Button key={value} aria-label={label} title={label} variant={safeSurface === value ? "editorActive" : "ghost"} size="sm" onClick={() => onSelectSurface(value)}><Icon size={14}/><span>{label}</span></Button>)}</aside><section className="more-content"><SurfaceTitle title={safeSurface === "settings" ? "Project settings" : moreNav.find((item) => item.value === safeSurface)?.label ?? "More"} onBack={onBack}/>{safeSurface === "settings" ? <SettingsSurface enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills}/> : safeSurface === "cloud" ? <CloudResources/> : safeSurface === "analytics" ? <AnalyticsExpanded/> : safeSurface === "security" ? <SecurityAudit/> : safeSurface === "payments" ? <PaymentsSurface/> : safeSurface === "agents" ? <AgentIntegrationsSurface/> : <FeatureSurface surface={safeSurface} projectId={projectId}/>}</section></div>;
+  return <div className="more-surface"><aside className="more-sidebar">{moreNav.map(({ label, value, icon: Icon }) => <Button key={value} aria-label={label} title={label} variant={safeSurface === value ? "editorActive" : "ghost"} size="sm" onClick={() => onSelectSurface(value)}><Icon size={14}/><span>{label}</span></Button>)}</aside><section className="more-content"><SurfaceTitle title={safeSurface === "settings" ? "Project settings" : moreNav.find((item) => item.value === safeSurface)?.label ?? "More"} onBack={onBack}/>{safeSurface === "settings" ? <SettingsSurface projectId={projectId} onSelectSurface={onSelectSurface} enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills}/> : safeSurface === "cloud" ? <CloudResources/> : safeSurface === "analytics" ? <AnalyticsExpanded/> : safeSurface === "security" ? <SecurityAudit/> : safeSurface === "payments" ? <PaymentsSurface/> : safeSurface === "agents" ? <AgentIntegrationsSurface/> : <FeatureSurface surface={safeSurface} projectId={projectId}/>}</section></div>;
 }
 
-function SettingsSurface({ enabledSkills, setEnabledSkills }: { enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
+function SettingsSurface({ projectId, onSelectSurface, enabledSkills, setEnabledSkills }: { projectId: string; onSelectSurface: (surface: Surface) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
+  const { session, request } = useBackend();
   const [tab, setTab] = useState("General");
-  const [monitoring, setMonitoring] = useState(true);
-  const [livePreview, setLivePreview] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState("Synced 4 minutes ago");
-  const syncGit = () => { setSyncing(true); window.setTimeout(() => { setSyncing(false); setLastSync("Synced just now"); }, 650); };
-  return <div className="settings-layout"><nav>{["General","Knowledge","Domains","Git","Skills"].map((item) => <Button key={item} variant={tab === item ? "editorActive" : "ghost"} size="sm" onClick={() => setTab(item)}>{item}</Button>)}</nav><div className="settings-scroll">{tab === "Skills" && <SkillsManager enabled={enabledSkills} onChange={setEnabledSkills}/>} {tab === "General" && <><div className="project-identity"><span className="project-symbol">O</span><div><h3>Orbit Finance</h3><p>Owned by Joshua's workspace · Created Sep 5, 2026</p></div></div><SettingsSection title="Project details"><DataRow label="Project name" value="Orbit Finance" action="Edit"/><DataRow label="URL subdomain" value="orbit-finance"/><DataRow label="Owner" value="Joshua Omoniyi"/><DataRow label="Messages count" value="10"/><DataRow label="AI edits count" value="6"/></SettingsSection><SettingsSection title="Project monitoring"><ToggleRow label="Project monitoring" detail="Regularly checks your project for issues and improvements." value={monitoring} setValue={setMonitoring}/></SettingsSection><SettingsSection title="Preview"><ToggleRow label="Live preview" detail="Show changes while Figurable is building." value={livePreview} setValue={setLivePreview}/></SettingsSection><SettingsSection title="Publishing"><DataRow label="Project category" value="Finance" action="Change"/><ToggleRow label="Visitor analytics" detail="Measure visits to the published app." value={true} setValue={() => undefined}/></SettingsSection></>}{tab === "Knowledge" && <SettingsSection title="Project knowledge"><label className="settings-field">Instructions<textarea defaultValue="Keep the interface calm, clear, and accessible."/></label><Button variant="editorActive" size="sm"><Plus size={13}/> Add knowledge</Button></SettingsSection>}{tab === "Domains" && <SettingsSection title="Domains"><p className="section-description">Connect a custom domain to your published project.</p><label className="settings-field">Domain<input placeholder="app.example.com"/></label><Button variant="editorActive" size="sm">Connect domain</Button></SettingsSection>}{tab === "Git" && <><SettingsSection title="Git"><div className="git-card"><div><Code2 size={17}/><span><b>GitHub repository</b><small>Theyoungtimesmedia/project-hub · main</small></span></div><span className="connection-state"><CheckCircle2 size={13}/> Connected</span></div><div className="git-details"><div><GitBranch size={14}/><span><b>main</b><small>Default branch · Protected</small></span><Button variant="outline" size="sm">Change</Button></div><div><Activity size={14}/><span><b>{lastSync}</b><small>Latest project changes are mirrored automatically.</small></span><Button variant="editorActive" size="sm" onClick={syncGit}>{syncing ? "Syncing…" : "Sync now"}</Button></div></div></SettingsSection><SettingsSection title="Repository actions"><div className="git-actions"><Button variant="outline" size="sm"><ExternalLink size={13}/> Open on GitHub</Button><Button variant="outline" size="sm"><GitBranch size={13}/> Create branch</Button></div></SettingsSection></>}</div></div>;
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [knowledge, setKnowledge] = useState<Array<{ id: string; title: string; content: string; created_at: string }>>([]);
+  const [knowledgeTitle, setKnowledgeTitle] = useState("");
+  const [knowledgeContent, setKnowledgeContent] = useState("");
+  const [github, setGithub] = useState<{ repository_owner: string; repository_name: string; default_branch: string; auto_push_enabled: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProject() {
+      try {
+        const rows = await request<Array<{ name: string; description: string; instructions: string }>>("projects?select=name,description,instructions&id=eq." + projectId);
+        if (!rows[0]) throw new Error("Project not found or access was removed.");
+        if (!cancelled) {
+          setName(rows[0].name); setDescription(rows[0].description ?? ""); setInstructions(rows[0].instructions ?? "");
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load project settings.");
+      } finally { if (!cancelled) setLoading(false); }
+    }
+    void loadProject();
+    return () => { cancelled = true; };
+  }, [projectId, request]);
+
+  useEffect(() => {
+    if (tab !== "Knowledge" && tab !== "Git") return;
+    let cancelled = false;
+    async function loadTab() {
+      try {
+        if (tab === "Knowledge") {
+          const rows = await request<Array<{ id: string; title: string; content: string; created_at: string }>>("project_knowledge?select=id,title,content,created_at&project_id=eq." + projectId + "&order=created_at.desc");
+          if (!cancelled) setKnowledge(rows);
+        } else {
+          const rows = await request<Array<{ repository_owner: string; repository_name: string; default_branch: string; auto_push_enabled: boolean }>>("github_integrations?select=repository_owner,repository_name,default_branch,auto_push_enabled&project_id=eq." + projectId);
+          if (!cancelled) setGithub(rows[0] ?? null);
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load this settings section.");
+      }
+    }
+    void loadTab();
+    return () => { cancelled = true; };
+  }, [tab, projectId, request]);
+
+  async function saveProject() {
+    setSaving(true); setError(null); setNotice("");
+    try {
+      await request("projects?id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ name: name.trim(), description, instructions, updated_at: new Date().toISOString() }) });
+      setNotice("Project details and instructions saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save project settings.");
+    } finally { setSaving(false); }
+  }
+
+  async function addKnowledge() {
+    if (!knowledgeTitle.trim() || !knowledgeContent.trim() || !session) return;
+    setSaving(true); setError(null); setNotice("");
+    try {
+      await request("project_knowledge", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ project_id: projectId, title: knowledgeTitle.trim(), content: knowledgeContent.trim(), created_by: session.user.id }) });
+      setKnowledgeTitle(""); setKnowledgeContent("");
+      const rows = await request<Array<{ id: string; title: string; content: string; created_at: string }>>("project_knowledge?select=id,title,content,created_at&project_id=eq." + projectId + "&order=created_at.desc");
+      setKnowledge(rows); setNotice("Knowledge saved to this project.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save project knowledge.");
+    } finally { setSaving(false); }
+  }
+
+  return <div className="settings-layout"><nav>{["General","Knowledge","Git","Skills"].map(item => <Button key={item} variant={tab === item ? "editorActive" : "ghost"} size="sm" onClick={() => setTab(item)}>{item}</Button>)}</nav><div className="settings-scroll">{loading ? <p className="p-5 text-sm text-zinc-500">Loading saved project settings…</p> : tab === "General" ? <><SettingsSection title="Project details"><label className="settings-field">Project name<input value={name} onChange={event => setName(event.target.value)} maxLength={120}/></label><label className="settings-field">Description<textarea value={description} onChange={event => setDescription(event.target.value)}/></label><Button variant="editorActive" size="sm" disabled={saving || !name.trim()} onClick={() => void saveProject()}>{saving ? "Saving…" : "Save project details"}</Button></SettingsSection><SettingsSection title="Persistent project instructions"><p className="section-description">These instructions are sent with every Build, Plan and Chat request for this project.</p><label className="settings-field">Project context<textarea value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Architecture, conventions, constraints, acceptance criteria, and things that must not change."/></label><Button variant="editorActive" size="sm" disabled={saving} onClick={() => void saveProject()}>{saving ? "Saving…" : "Save instructions"}</Button></SettingsSection></> : tab === "Knowledge" ? <><SettingsSection title="Project knowledge"><p className="section-description">Saved notes and scraped sources are retrieved as context by the agent.</p><label className="settings-field">Title<input value={knowledgeTitle} onChange={event => setKnowledgeTitle(event.target.value)} placeholder="Requirement, decision, or source title"/></label><label className="settings-field">Content<textarea value={knowledgeContent} onChange={event => setKnowledgeContent(event.target.value)} placeholder="Write the facts or constraints the agent should retain."/></label><Button variant="editorActive" size="sm" disabled={saving || !knowledgeTitle.trim() || !knowledgeContent.trim()} onClick={() => void addKnowledge()}>{saving ? "Saving…" : "Save knowledge"}</Button></SettingsSection><div className="mt-4 space-y-2">{knowledge.map(item => <article key={item.id} className="rounded-xl border border-zinc-200 bg-white p-3"><b className="text-sm">{item.title}</b><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-zinc-600">{item.content}</p><small className="mt-2 block text-[11px] text-zinc-400">{new Date(item.created_at).toLocaleString()}</small></article>)}{knowledge.length === 0 && <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500">No project knowledge saved yet.</p>}</div></> : tab === "Git" ? <SettingsSection title="GitHub connection">{github ? <><div className="git-card"><div><GitBranch size={17}/><span><b>{github.repository_owner}/{github.repository_name}</b><small>Branch: {github.default_branch}</small></span></div><span className={github.auto_push_enabled ? "status-good" : "status-muted"}>{github.auto_push_enabled ? "Auto-push enabled" : "Auto-push disabled"}</span></div><Button variant="editorActive" size="sm" onClick={() => onSelectSurface("connectors")}>Manage GitHub connection</Button></> : <><p className="section-description">No repository is connected to this project.</p><Button variant="editorActive" size="sm" onClick={() => onSelectSurface("connectors")}>Connect GitHub</Button></>}</SettingsSection> : <SkillsManager enabled={enabledSkills} onChange={setEnabledSkills}/>}</div>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-emerald-700">{notice}</p>}</div>;
 }
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="settings-section"><h3>{title}</h3><div>{children}</div></section>; }
-function DataRow({ label, value, action }: { label: string; value: string; action?: string }) { return <div className="data-row"><span>{label}</span><b>{value}</b>{action ? <Button variant="outline" size="sm">{action}</Button> : <span/>}</div>; }
-function ToggleRow({ label, detail, value, setValue }: { label: string; detail: string; value: boolean; setValue: (value: boolean) => void }) { return <div className="toggle-row"><div><b>{label}</b><p>{detail}</p></div><Button variant={value ? "editorActive" : "outline"} size="icon-sm" className={`editor-switch ${value ? "on" : ""}`} onClick={() => setValue(!value)} aria-label={`Toggle ${label}`}><i/></Button></div>; }
 
 function FeatureSurface({ surface, projectId }: { surface: Surface; projectId: string }) { const data = useMemo(() => ({ ai: ["AI usage", "Monitor models, request volume, and spend.", Sparkles], agents: ["Agent integrations", "Connect tools that extend your project agent.", Sparkles], payments: ["Payments", "Set up products, subscriptions, and checkout.", CreditCard], seo: ["SEO & AI search", "Review metadata, indexing, and accessibility.", Globe2], logs: ["Logs", "Inspect recent project activity.", Terminal] } as const), []); const item = data[surface as keyof typeof data] ?? ["Project tool", "Configure this project feature.", Settings] as const; const Icon = item[2]; if (surface === "seo") return <SeoSurface/>; if (surface === "ai") return <AiSurface projectId={projectId}/>; if (surface === "connectors") return <ConnectorsSurface projectId={projectId}/>; return <div className="feature-page"><div className="feature-empty"><span><Icon size={21}/></span><h3>{item[0]}</h3><p>{item[1]}</p><Button variant="editorActive" size="sm">Open setup</Button></div></div>; }
 
