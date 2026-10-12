@@ -1,16 +1,60 @@
 import { Activity, Check, Database, Eye, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { skills } from '@/lib/mock-data';
+import { useBackend } from '@/lib/backend';
 
 export function SupabaseSetup() {
   const [mode, setMode] = useState('Custom Supabase'); const [url, setUrl] = useState(''); const [anon, setAnon] = useState(''); const [role, setRole] = useState(''); const [visible, setVisible] = useState(false); const [status, setStatus] = useState('Not tested'); const [connected, setConnected] = useState(false);
   function test() { if (mode === 'Custom Supabase') { try { const parsed = new URL(url); if (parsed.protocol !== 'https:' || !anon || !role) { setStatus('Enter an HTTPS project URL and both demo keys.'); return; } } catch { setStatus('Enter a valid HTTPS project URL.'); return; } } setStatus('Demo connection passed'); setConnected(true); setRole(''); setAnon(''); }
   return <div className="expanded-page"><div className="connector-hero"><span className="connector-icon"><Database size={22}/></span><div><h3>Supabase</h3><p>Postgres · Auth · Storage · Functions</p></div><Button variant="outline" size="sm" onClick={() => { setConnected(false); setStatus('Disconnected'); }}>Disconnect</Button></div><div className="feature-tabs">{['Lovable Cloud', 'Custom Supabase'].map(item => <Button key={item} size="sm" variant={mode === item ? 'editorActive' : 'ghost'} onClick={() => { setMode(item); setConnected(false); setStatus('Not tested'); }}>{item}</Button>)}</div><div className="local-notice">Simulation only — use sample keys. No credentials are saved and no provider is contacted.</div>{mode === 'Custom Supabase' ? <div className="setup-form"><label className="settings-field">Project URL<input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://xyzcompany.supabase.co"/></label><label className="settings-field">Anon public key<input type="password" autoComplete="off" value={anon} onChange={e => setAnon(e.target.value)} placeholder="Sample public key"/></label><label className="settings-field">Service role key<div className="secret-input"><input type={visible ? 'text' : 'password'} autoComplete="off" value={role} onChange={e => setRole(e.target.value)} placeholder="Sample private key"/><Button variant="ghost" size="icon-sm" aria-label="Toggle service key visibility" onClick={() => setVisible(!visible)}><Eye size={13}/></Button></div></label></div> : <div className="managed-resources"><Database size={28}/><h3>Managed project</h3><p>Database, users, storage, and functions</p></div>}<div className="context-actions"><Button variant="editorActive" size="sm" onClick={test}><Check size={13}/>Test connection</Button><span role="status" className={connected ? 'status-good' : 'status-muted'}>{status}</span></div>{connected && <div className="schema-state"><b>Demo schema</b><span>auth.users</span><span>public.tables</span><Button variant="outline" size="sm" onClick={() => setStatus('Demo schema synchronized just now')}><RefreshCw size={13}/>Sync schema</Button></div>}</div>;
 }
+type WorkspaceSkill = { id: string; workspace_id: string; name: string; command: string; description: string; instructions: string; is_enabled: boolean; version: number };
+
 export function SkillsManager({ enabled, onChange }: { enabled: string[]; onChange: (items: string[]) => void }) {
-  const [editing, setEditing] = useState<string | null>(null); const [prompts, setPrompts] = useState<Record<string, string>>({}); const [notice, setNotice] = useState('');
-  return <div className="expanded-page"><h3>Active skills</h3><div className="skills-grid">{skills.filter(skill => !skill.draft).map((skill, index) => <article className="skill-card" key={skill.command}><header><b>{skill.title}</b><span>{index % 2 ? 'Project' : 'Workspace'}</span></header><code>{skill.command}</code><p>{skill.detail}</p><div className="context-actions"><Button role="switch" aria-checked={enabled.includes(skill.command)} aria-label={`Enable ${skill.title}`} variant={enabled.includes(skill.command) ? 'editorActive' : 'outline'} size="sm" onClick={() => onChange(enabled.includes(skill.command) ? enabled.filter(item => item !== skill.command) : [...enabled, skill.command])}>{enabled.includes(skill.command) ? 'Active' : 'Disabled'}</Button><Button size="sm" variant="ghost" onClick={() => setEditing(editing === skill.command ? null : skill.command)}>Edit prompt</Button></div>{editing === skill.command && <label className="settings-field">Instructions<textarea value={prompts[skill.command] ?? skill.detail} onChange={e => setPrompts({ ...prompts, [skill.command]: e.target.value })}/><Button variant="outline" size="sm" onClick={() => { setEditing(null); setNotice('Skill instructions saved for this session.'); }}>Save prompt</Button></label>}</article>)}</div><h3>Draft skills</h3><article className="skill-card"><header><b>Release review</b><span>Project · {enabled.includes('/release-review') ? 'Active' : 'Draft'}</span></header><code>/release-review</code><p>Review the release checklist before publication.</p><Button variant="outline" size="sm" onClick={() => { const active = enabled.includes('/release-review'); onChange(active ? enabled.filter(item => item !== '/release-review') : [...enabled, '/release-review']); setNotice(active ? 'Release review returned to drafts.' : 'Release review added to the slash menu.'); }}>{enabled.includes('/release-review') ? 'Return to draft' : 'Activate draft'}</Button></article><p role="status" className="local-notice">{notice || 'Demo skill library · changes apply to this session only.'}</p></div>;
+  const { request } = useBackend();
+  const [skills, setSkills] = useState<WorkspaceSkill[]>([]);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [prompts, setPrompts] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const workspaces = await request<Array<{ id: string }>>("workspaces?select=id&order=created_at.asc&limit=1");
+        if (!workspaces[0]) throw new Error("No workspace is available for this account.");
+        const rows = await request<WorkspaceSkill[]>("skills?select=id,workspace_id,name,command,description,instructions,is_enabled,version&workspace_id=eq." + workspaces[0].id + "&order=name.asc");
+        if (!cancelled) {
+          setWorkspaceId(workspaces[0].id);
+          setSkills(rows);
+          setPrompts(Object.fromEntries(rows.map(skill => [skill.command, skill.instructions])));
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load workspace skills.");
+      } finally { if (!cancelled) setLoading(false); }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [request]);
+
+  async function savePrompt(skill: WorkspaceSkill) {
+    const value = prompts[skill.command] ?? skill.instructions;
+    try {
+      await request("skills?id=eq." + skill.id, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ instructions: value, version: skill.version + 1, updated_at: new Date().toISOString() }) });
+      setSkills(current => current.map(item => item.id === skill.id ? { ...item, instructions: value, version: item.version + 1 } : item));
+      setEditing(null);
+      setNotice("Saved " + skill.name + " to your workspace.");
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save skill instructions.");
+    }
+  }
+
+  return <div className="expanded-page"><div className="mb-4"><h3>Workspace skills</h3><p className="text-sm text-zinc-500">These instructions are saved in Supabase and can be called from the editor using their slash command.</p></div>{error && <p role="alert" className="mb-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{loading ? <p className="py-8 text-sm text-zinc-500">Loading saved skills…</p> : skills.length === 0 ? <div className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">No skills are configured for this workspace.</div> : <div className="skills-grid">{skills.map(skill => <article className="skill-card" key={skill.id}><header><b>{skill.name}</b><span>Workspace</span></header><code>{skill.command}</code><p>{skill.description}</p><div className="context-actions"><Button role="switch" aria-checked={enabled.includes(skill.command)} aria-label={"Enable " + skill.name} variant={enabled.includes(skill.command) ? "editorActive" : "outline"} size="sm" onClick={() => onChange(enabled.includes(skill.command) ? enabled.filter(item => item !== skill.command) : [...enabled, skill.command])}>{enabled.includes(skill.command) ? "Active" : "Disabled"}</Button><Button size="sm" variant="ghost" onClick={() => setEditing(editing === skill.command ? null : skill.command)}>Edit instructions</Button></div>{editing === skill.command && <label className="settings-field">Agent instructions<textarea value={prompts[skill.command] ?? skill.instructions} onChange={event => setPrompts(current => ({ ...current, [skill.command]: event.target.value }))}/><Button variant="editorActive" size="sm" onClick={() => void savePrompt(skill)}>Save instructions</Button></label>}</article>)}</div>}<p role="status" className="local-notice">{notice}</p></div>;
 }
 export function SeoSurface() {
   const [title, setTitle] = useState('Orbit — Money made clear'); const [description, setDescription] = useState('A calm place for spending, saving, and everything ahead.'); const [image, setImage] = useState(''); const [card, setCard] = useState('summary_large_image'); const [indexing, setIndexing] = useState(true); const [llms, setLlms] = useState(false); const [preview, setPreview] = useState(false); const [notice, setNotice] = useState('');
