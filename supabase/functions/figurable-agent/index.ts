@@ -153,11 +153,75 @@ Deno.serve(async (req) => {
         if (path === "index.html" || path === "src/index.html") previewHtml = item.content;
         await log("edit", "Saved " + path, "Generated file persisted to private project storage.", { path, size_bytes: new TextEncoder().encode(item.content).length });
       }
-      summary = parsed.summary;
-      resultPayload = { answer, files: manifest, preview_html: previewHtml };
+      let githubSync: Record<string, unknown> = { enabled: false };
+      const { data: integration } = await admin.from("github_integrations")
+        .select("repository_owner,repository_name,default_branch,auto_push_enabled")
+        .eq("project_id", projectId).maybeSingle();
+      if (integration?.auto_push_enabled) {
+        const { data: vaultGithubToken } = await admin.rpc("read_project_secret", { p_project_id: projectId, p_secret_key: "GITHUB_TOKEN" });
+        const githubToken = typeof vaultGithubToken === "string" ? vaultGithubToken : "";
+        try {
+          if (!githubToken) throw new Error("GitHub token is missing from the encrypted vault.");
+          const owner = integration.repository_owner;
+          const repo = integration.repository_name;
+          const branch = integration.default_branch || project.github_branch || "main";
+          const api = "https://api.github.com/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repo);
+          const ghHeaders = { Authorization: "Bearer " + githubToken, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" };
+          const refResponse = await fetch(api + "/git/ref/heads/" + encodeURIComponent(branch), { headers: ghHeaders });
+          const refData = await refResponse.json().catch(() => ({}));
+          if (!refResponse.ok) throw new Error("Could not read GitHub branch " + branch + " (HTTP " + refResponse.status + ").");
+          const parentSha = refData.object?.sha;
+          const commitResponse = await fetch(api + "/git/commits/" + parentSha, { headers: ghHeaders });
+          const parentCommit = await commitResponse.json().catch(() => ({}));
+          if (!commitResponse.ok || !parentCommit.tree?.sha) throw new Error("Could not read the current GitHub tree.");
+          const treeEntries = [];
+          for (const candidate of parsed.files) {
+            const item = candidate as Record<string, unknown>;
+            const path = safePath(item.path);
+            if (!path || typeof item.content !== "string") continue;
+            const blobResponse = await fetch(api + "/git/blobs", { method: "POST", headers: ghHeaders, body: JSON.stringify({ content: item.content, encoding: "utf-8" }) });
+            const blobData = await blobResponse.json().catch(() => ({}));
+            if (!blobResponse.ok || !blobData.sha) throw new Error("Could not upload Git blob for " + path + ".");
+            treeEntries.push({ path, mode: "100644", type: "blob", sha: blobData.sha });
+          }
+          const treeResponse = await fetch(api + "/git/trees", { method: "POST", headers: ghHeaders, body: JSON.stringify({ base_tree: parentCommit.tree.sha, tree: treeEntries }) });
+          const treeData = await treeResponse.json().catch(() => ({}));
+          if (!treeResponse.ok || !treeData.sha) throw new Error("Could not create the GitHub tree.");
+          const commitResponse2 = await fetch(api + "/git/commits", { method: "POST", headers: ghHeaders, body: JSON.stringify({ message: "Figurable: " + String(parsed.summary).slice(0, 120), tree: treeData.sha, parents: [parentSha] }) });
+          const commitData = await commitResponse2.json().catch(() => ({}));
+          if (!commitResponse2.ok || !commitData.sha) throw new Error("Could not create the GitHub commit.");
+          const updateRef = await fetch(api + "/git/refs/heads/" + encodeURIComponent(branch), { method: "PATCH", headers: ghHeaders, body: JSON.stringify({ sha: commitData.sha, force: false }) });
+          if (!updateRef.ok) throw new Error("GitHub rejected the branch update (HTTP " + updateRef.status + ").");
+          githubSync = { enabled: true, success: true, repository: owner + "/" + repo, branch, commit_sha: commitData.sha };
+          await admin.from("github_integrations").update({ last_synced_at: new Date().toISOString(), last_sync_status: "Pushed " + commitData.sha }).eq("project_id", projectId);
+          await log("connector", "Changes pushed to GitHub", owner + "/" + repo + " · " + branch, { commit_sha: commitData.sha });
+        } catch (syncError) {
+          const syncMessage = syncError instanceof Error ? syncError.message : "GitHub sync failed.";
+          githubSync = { enabled: true, success: false, error: syncMessage };
+          await admin.from("github_integrations").update({ last_sync_status: "Failed: " + syncMessage }).eq("project_id", projectId);
+          await log("connector", "GitHub push failed", syncMessage);
+        }
+      }
+
+      const { data: snapshotFiles } = await admin.from("project_files")
+        .select("file_path,storage_path,mime_type,size_bytes").eq("project_id", projectId);
+      const snapshotManifest: Record<string, unknown> = {};
+      for (const savedFile of snapshotFiles ?? []) {
+        if (!savedFile.storage_path) continue;
+        const { data: blob, error: downloadError } = await admin.storage.from("project-files").download(savedFile.storage_path);
+        if (downloadError || !blob) continue;
+        const snapshotPath = projectId + "/_snapshots/" + turn.id + "/" + savedFile.file_path;
+        const { error: snapshotError } = await admin.storage.from("project-files").upload(snapshotPath, blob, { upsert: true, contentType: savedFile.mime_type });
+        if (snapshotError) continue;
+        snapshotManifest[savedFile.file_path] = { storage_path: savedFile.storage_path, snapshot_path: snapshotPath, mime_type: savedFile.mime_type, size_bytes: savedFile.size_bytes };
+      }
+      summary = String(parsed.summary);
+      if (githubSync.enabled && githubSync.success) summary += " Changes pushed to GitHub.";
+      if (githubSync.enabled && !githubSync.success) summary += " Files are saved in Figurable storage, but GitHub push failed: " + String(githubSync.error);
+      resultPayload = { answer, files: manifest, preview_html: previewHtml, github_sync: githubSync };
       await admin.from("project_snapshots").insert({
         project_id: projectId, turn_id: turn.id, label: summary.slice(0, 120),
-        branch_name: project.active_branch || "main", files_manifest: manifest, summary, created_by: authData.user.id,
+        branch_name: project.active_branch || "main", files_manifest: snapshotManifest, summary, created_by: authData.user.id,
       });
       if (previewHtml) await log("output", "Preview document saved", "A self-contained index.html is available for preview.", { path: "index.html" });
     }
