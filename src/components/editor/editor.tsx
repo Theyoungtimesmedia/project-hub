@@ -49,7 +49,6 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const [pageSearch, setPageSearch] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
-  const [publishOpen, setPublishOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [promptHelperOpen, setPromptHelperOpen] = useState(false);
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
@@ -244,7 +243,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
           <span className="collaborator-avatar" title="Joshua Omoniyi">J</span>
         </>}
         <Button className="share-trigger rounded-full" variant="outline" size="sm" onClick={() => setShareOpen(true)}><Share2 size={13}/> Share</Button>
-        <Button className="publish-trigger rounded-full" variant="send" size="sm" onClick={() => setPublishOpen(true)}>Publish</Button>
+        
         <Button variant="ghost" size="icon-sm" aria-label="Account"><CircleUserRound size={17}/></Button>
       </div>
     </header>
@@ -299,8 +298,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
 
     {mobileChat && <button className="mobile-backdrop" onClick={() => setMobileChat(false)} aria-label="Close chat"/>}
     {!chatOpen && <Button variant="editorActive" size="icon-sm" className="chat-restore" onClick={() => setChatOpen(true)} aria-label="Show chat panel"><ChevronRight size={15}/></Button>}
-    <ProjectDialog kind="share" open={shareOpen} onClose={() => setShareOpen(false)} projectName={projectName}/>
-    <ProjectDialog kind="publish" open={publishOpen} onClose={() => setPublishOpen(false)} projectName={projectName}/>
+    <ProjectDialog open={shareOpen} onClose={() => setShareOpen(false)} projectName={projectName} projectId={projectId}/>
     <PromptHelperDialog open={promptHelperOpen} onOpenChange={setPromptHelperOpen} draft={draft} onUse={(value) => { setDraft(value); setPromptHelperOpen(false); inputRef.current?.focus(); }}/>
   </main>;
 }
