@@ -3,10 +3,89 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useBackend } from '@/lib/backend';
 
-export function SupabaseSetup() {
-  const [mode, setMode] = useState('Custom Supabase'); const [url, setUrl] = useState(''); const [anon, setAnon] = useState(''); const [role, setRole] = useState(''); const [visible, setVisible] = useState(false); const [status, setStatus] = useState('Not tested'); const [connected, setConnected] = useState(false);
-  function test() { if (mode === 'Custom Supabase') { try { const parsed = new URL(url); if (parsed.protocol !== 'https:' || !anon || !role) { setStatus('Enter an HTTPS project URL and both demo keys.'); return; } } catch { setStatus('Enter a valid HTTPS project URL.'); return; } } setStatus('Demo connection passed'); setConnected(true); setRole(''); setAnon(''); }
-  return <div className="expanded-page"><div className="connector-hero"><span className="connector-icon"><Database size={22}/></span><div><h3>Supabase</h3><p>Postgres · Auth · Storage · Functions</p></div><Button variant="outline" size="sm" onClick={() => { setConnected(false); setStatus('Disconnected'); }}>Disconnect</Button></div><div className="feature-tabs">{['Lovable Cloud', 'Custom Supabase'].map(item => <Button key={item} size="sm" variant={mode === item ? 'editorActive' : 'ghost'} onClick={() => { setMode(item); setConnected(false); setStatus('Not tested'); }}>{item}</Button>)}</div><div className="local-notice">Simulation only — use sample keys. No credentials are saved and no provider is contacted.</div>{mode === 'Custom Supabase' ? <div className="setup-form"><label className="settings-field">Project URL<input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://xyzcompany.supabase.co"/></label><label className="settings-field">Anon public key<input type="password" autoComplete="off" value={anon} onChange={e => setAnon(e.target.value)} placeholder="Sample public key"/></label><label className="settings-field">Service role key<div className="secret-input"><input type={visible ? 'text' : 'password'} autoComplete="off" value={role} onChange={e => setRole(e.target.value)} placeholder="Sample private key"/><Button variant="ghost" size="icon-sm" aria-label="Toggle service key visibility" onClick={() => setVisible(!visible)}><Eye size={13}/></Button></div></label></div> : <div className="managed-resources"><Database size={28}/><h3>Managed project</h3><p>Database, users, storage, and functions</p></div>}<div className="context-actions"><Button variant="editorActive" size="sm" onClick={test}><Check size={13}/>Test connection</Button><span role="status" className={connected ? 'status-good' : 'status-muted'}>{status}</span></div>{connected && <div className="schema-state"><b>Demo schema</b><span>auth.users</span><span>public.tables</span><Button variant="outline" size="sm" onClick={() => setStatus('Demo schema synchronized just now')}><RefreshCw size={13}/>Sync schema</Button></div>}</div>;
+type SupabaseConnectorRecord = { id: string; project_id: string; organization_label: string; project_url: string; anon_key: string; schema_snapshot: { tables?: string[]; paths?: string[]; synced_at?: string }; last_tested_at: string | null; last_test_status: string | null; is_active: boolean };
+
+export function SupabaseSetup({ projectId }: { projectId: string }) {
+  const { session, request } = useBackend();
+  const [url, setUrl] = useState("");
+  const [anon, setAnon] = useState("");
+  const [status, setStatus] = useState("No connection saved");
+  const [connected, setConnected] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [schema, setSchema] = useState<SupabaseConnectorRecord["schema_snapshot"] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const rows = await request<SupabaseConnectorRecord[]>("supabase_connectors?select=id,project_id,organization_label,project_url,anon_key,schema_snapshot,last_tested_at,last_test_status,is_active&project_id=eq." + projectId);
+        if (!cancelled && rows[0]) {
+          setUrl(rows[0].project_url);
+          setAnon(rows[0].anon_key);
+          setSchema(rows[0].schema_snapshot);
+          setConnected(rows[0].is_active);
+          setStatus(rows[0].last_test_status ?? "Saved connection");
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load connector settings.");
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, request]);
+
+  async function testConnection() {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".supabase.co") || parsed.pathname !== "/" && parsed.pathname !== "") throw new Error("Use the HTTPS project URL from Supabase, without a REST path.");
+    if (!anon.trim()) throw new Error("Enter the project's publishable/anon key. Do not enter a service-role key here.");
+    const response = await fetch(parsed.origin + "/rest/v1/", { headers: { apikey: anon.trim(), Authorization: "Bearer " + anon.trim() } });
+    const spec = await response.json().catch(() => ({})) as { paths?: Record<string, unknown>; info?: { title?: string } };
+    if (!response.ok) throw new Error("Supabase connection failed with HTTP " + response.status + ". Check the project URL, public key, and API availability.");
+    const paths = Object.keys(spec.paths ?? {}).filter(path => path !== "/" && !path.startsWith("/rpc/"));
+    const tables = paths.map(path => path.replace(/^\/|\/$/g, "")).filter(Boolean);
+    const snapshot = { tables, paths, synced_at: new Date().toISOString(), api_title: spec.info?.title ?? null };
+    setSchema(snapshot);
+    setConnected(true);
+    setStatus("Connection verified · " + tables.length + " REST resources");
+    return { origin: parsed.origin, snapshot };
+  }
+
+  async function saveAndSync() {
+    setBusy(true);
+    setError(null);
+    try {
+      const checked = await testConnection();
+      if (!session) throw new Error("Sign in before saving a connector.");
+      const hostLabel = new URL(checked.origin).hostname.split(".")[0];
+      await request("supabase_connectors?on_conflict=project_id", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          project_id: projectId, organization_label: hostLabel, project_url: checked.origin,
+          anon_key: anon.trim(), schema_snapshot: checked.snapshot, last_tested_at: new Date().toISOString(),
+          last_test_status: "Connection verified", is_active: true, created_by: session.user.id, updated_at: new Date().toISOString(),
+        }),
+      });
+      setStatus("Connection and schema snapshot saved");
+    } catch (cause) {
+      setConnected(false);
+      setError(cause instanceof Error ? cause.message : "Could not connect to Supabase.");
+    } finally { setBusy(false); }
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    setError(null);
+    try {
+      await request("supabase_connectors?project_id=eq." + projectId, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      setUrl(""); setAnon(""); setSchema(null); setConnected(false); setStatus("Connection removed");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove connector.");
+    } finally { setBusy(false); }
+  }
+
+  return <div className="expanded-page"><div className="connector-hero"><span className="connector-icon"><Database size={22}/></span><div><h3>Supabase</h3><p>Bring your own Postgres, Auth, Storage and Functions project</p></div><Button variant="outline" size="sm" disabled={busy || !connected} onClick={() => void disconnect()}>Disconnect</Button></div><div className="local-notice">Only the publishable/anon key is stored. Service-role keys must never be entered into the browser or exposed in client code.</div><div className="setup-form"><label className="settings-field">Project URL<input autoComplete="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://your-project.supabase.co"/></label><label className="settings-field">Publishable / anon key<input type="password" autoComplete="off" value={anon} onChange={event => setAnon(event.target.value)} placeholder="Public project key"/></label></div><div className="context-actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => { setBusy(true); setError(null); void testConnection().catch(cause => { setConnected(false); setError(cause instanceof Error ? cause.message : "Connection failed."); }).finally(() => setBusy(false)); }}><Check size={13}/>{busy ? "Checking…" : "Test connection"}</Button><Button variant="editorActive" size="sm" disabled={busy} onClick={() => void saveAndSync()}><RefreshCw size={13}/>{busy ? "Saving…" : "Save & sync schema"}</Button><span role="status" className={connected ? "status-good" : "status-muted"}>{status}</span></div>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{schema && <div className="schema-state"><b>Live REST resources · {schema.tables?.length ?? 0}</b>{(schema.tables ?? []).slice(0, 30).map(table => <span key={table}><Check size={12}/>{table}</span>)}<small>Last schema test: {schema.synced_at ? new Date(schema.synced_at).toLocaleString() : "Not recorded"}</small></div>}</div>;
 }
 type WorkspaceSkill = { id: string; workspace_id: string; name: string; command: string; description: string; instructions: string; is_enabled: boolean; version: number };
 
