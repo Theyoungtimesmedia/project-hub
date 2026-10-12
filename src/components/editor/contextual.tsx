@@ -2,7 +2,6 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Activity, Check, ChevronDown, ChevronRight, Clock3, Code2, Copy, Eye, EyeOff, FileCode2, FileText, KeyRound, ListChecks, LockKeyhole, MessageCircle, ShieldCheck, Terminal, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useBackend } from '@/lib/backend';
-import { useBackend } from '@/lib/backend';
 import { Button } from '@/components/ui/button';
 
 export type PlanState = { title: string; text: string; steps: boolean[]; stepDetails?: Array<{ title: string; detail: string; path?: string; action?: string }>; files?: Array<{ path: string; action: string }>; status: 'review' | 'approved' | 'discarded' };
