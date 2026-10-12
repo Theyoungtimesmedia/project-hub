@@ -39,11 +39,10 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const modelKey = Deno.env.get("OPENROUTER_API_KEY");
+  const envModelKey = Deno.env.get("OPENROUTER_API_KEY");
   const model = Deno.env.get("FIGURABLE_MODEL") || "openrouter/free";
 
   if (!token || !supabaseUrl || !anonKey || !serviceKey) return respond({ error: "A valid signed-in session is required." }, 401);
-  if (!modelKey) return respond({ error: "AI is not configured yet. Add OPENROUTER_API_KEY to this Supabase project's Edge Function secrets before running Build, Plan or Chat." }, 503);
 
   let body: { projectId?: string; mode?: string; prompt?: string; selectedContext?: string | null };
   try { body = await req.json(); } catch { return respond({ error: "Request body must be valid JSON." }, 400); }
@@ -64,6 +63,10 @@ Deno.serve(async (req) => {
     .select("id,workspace_id,name,description,instructions,active_branch,github_repo")
     .eq("id", projectId).maybeSingle();
   if (projectError || !project) return respond({ error: "Project not found or you do not have access to it." }, 404);
+
+  const { data: vaultModelKey } = await admin.rpc("read_project_secret", { p_project_id: projectId, p_secret_key: "OPENROUTER_API_KEY" });
+  const modelKey = typeof vaultModelKey === "string" && vaultModelKey.trim() ? vaultModelKey : envModelKey;
+  if (!modelKey) return respond({ error: "AI is not configured. Add an OpenRouter API key in this project's More → AI settings. The key is encrypted in Supabase Vault." }, 503);
 
   const { data: knowledge } = await userClient.from("project_knowledge")
     .select("title,content").eq("project_id", projectId).eq("is_active", true).order("updated_at", { ascending: false }).limit(12);
