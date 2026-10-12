@@ -22,6 +22,7 @@ type AuthContextValue = {
   request: <T>(path: string, init?: RequestInit) => Promise<T>;
   upload: (path: string, file: File) => Promise<void>;
   download: (path: string) => Promise<Blob>;
+  remove: (path: string) => Promise<void>;
   invoke: <T>(name: string, body: unknown) => Promise<T>;
 };
 
@@ -170,6 +171,20 @@ export function BackendProvider({ children }: { children: ReactNode }) {
     return response.blob();
   }, []);
 
+  const remove = useCallback(async (path: string) => {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Supabase is not configured.");
+    const current = readStoredSession();
+    if (!current) throw new Error("Sign in before deleting project files.");
+    const response = await fetch(SUPABASE_URL + "/storage/v1/object/project-files/" + path.split("/").map(encodeURIComponent).join("/"), {
+      method: "DELETE",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + current.access_token },
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+      throw new Error(String(data.message ?? data.error ?? "Could not delete stored file."));
+    }
+  }, []);
+
   const invoke = useCallback(async <T,>(name: string, body: unknown): Promise<T> => {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Supabase is not configured.");
     const current = readStoredSession();
@@ -184,7 +199,7 @@ export function BackendProvider({ children }: { children: ReactNode }) {
     return data as T;
   }, []);
 
-  const value = useMemo(() => ({ configured, session, loading, error, signIn, signUp, signOut, request, upload, download, invoke }), [configured, session, loading, error, signIn, signUp, signOut, request, upload, download, invoke]);
+  const value = useMemo(() => ({ configured, session, loading, error, signIn, signUp, signOut, request, upload, download, remove, invoke }), [configured, session, loading, error, signIn, signUp, signOut, request, upload, download, remove, invoke]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
