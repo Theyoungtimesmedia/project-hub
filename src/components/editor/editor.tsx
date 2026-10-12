@@ -2,7 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Link } from "@tanstack/react-router";
 import {
-  Activity, ArrowLeft, ArrowRight, ArrowUp, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
+  ArrowLeft, ArrowRight, ArrowUp, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
   CircleUserRound, Clock3, Code2, Copy, ExternalLink, Eye, EyeOff, FileCode2, FileText, GitBranch, History, ImagePlus,
   KeyRound, ListChecks, LockKeyhole, Menu, MessageCircle, Mic, Monitor, MoreHorizontal, MousePointer2,
   Paintbrush, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, RefreshCw, RotateCcw,
@@ -152,7 +152,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     <section className="editor-workspace">
       <aside className={`chat-panel ${mobileChat ? "mobile-open" : ""}`} aria-hidden={!chatOpen}>
         <div className="chat-feed">
-          {messages.map((message) => <MessageTurn key={message.id} message={message} plan={plan} onDiscardPlan={discardPlan} onAnswer={answer => setMessages(current => [...current, { id: Date.now(), text: answer, summary: `Selected ${answer} for the prototype. No authentication service was enabled.`, kind: "build", headline }])} previewing={versionId === message.id} detailsOpen={detailsTurn?.id === message.id} onDetails={() => setDetailsTurn(current => current?.id === message.id ? null : message)} onPreview={() => previewTurn(message)} onOpenPlan={() => { setPlanPreview(true); setSurface("preview"); }} onApprovePlan={approvePlan}/>) }
+          {messages.map((message) => <MessageTurn key={message.id} message={message} plan={plan} onDiscardPlan={discardPlan} onAnswer={answer => setMessages(current => [...current, { id: Date.now(), text: answer, summary: `Selected ${answer} for the prototype. No authentication service was enabled.`, kind: "build", headline }])} previewing={versionId === message.id} detailsOpen={detailsTurn?.id === message.id} onDetails={() => setDetailsTurn(current => current?.id === message.id ? null : message)} onPreview={() => { previewTurn(message); setDetailsTurn(null); }} onOpenPlan={() => { setPlanPreview(true); setSurface("preview"); }} onApprovePlan={approvePlan}/>) }
           {building && <div className="thinking-live"><Sparkles size={13}/><span>Working</span><i/><i/><i/></div>}
         </div>
         <div className="chat-composer-wrap">

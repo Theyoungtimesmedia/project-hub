@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { Check, Clock3, Code2, Copy, Eye, EyeOff, FileCode2, FileText, KeyRound, ListChecks, LockKeyhole, MessageCircle, ShieldCheck, Terminal, X } from 'lucide-react';
+import { Activity, Check, ChevronDown, ChevronRight, Clock3, Code2, Copy, Eye, EyeOff, FileCode2, FileText, KeyRound, ListChecks, LockKeyhole, MessageCircle, ShieldCheck, Terminal, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 
