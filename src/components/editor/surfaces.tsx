@@ -22,7 +22,7 @@ export function SurfacePanel({ projectId, surface, onBack, onSelectSurface, vers
   if (surface === "code") return <CodeSurface projectId={projectId}/>;
   if (surface === "files") return <FilesSurface projectId={projectId}/>;
   if (surface === "history") return <HistorySurface onBack={onBack} versions={versions} onPreviewVersion={onPreviewVersion}/>;
-  return <MoreSurface enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills} surface={surface} onBack={onBack} onSelectSurface={onSelectSurface}/>;
+  return <MoreSurface projectId={projectId} enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills} surface={surface} onBack={onBack} onSelectSurface={onSelectSurface}/>;
 }
 
 function SurfaceTitle({ title, detail, onBack }: { title: string; detail?: string; onBack?: () => void }) {
@@ -159,9 +159,9 @@ function HistorySurface({ onBack, versions, onPreviewVersion }: { onBack: () => 
   return <div className="history-surface"><SurfaceTitle title="History" detail="Local project snapshots" onBack={onBack}/><div className="history-tabs">{["History", "Bookmarks"].map(item => <Button key={item} variant={tab === item ? "editorActive" : "ghost"} size="sm" onClick={() => setTab(item)}>{item}</Button>)}</div><div className="history-list">{[...versions].reverse().filter(version => tab === "History" || bookmarks.includes(version.id)).map((version, index) => <div className="history-entry" key={version.id}><Button variant="ghost" onClick={() => onPreviewVersion(version.id)}><span><b>{version.text}</b><small>{index === 0 ? "Latest snapshot" : "Previous snapshot"}</small></span><ChevronRight size={13}/></Button><Button variant={bookmarks.includes(version.id) ? "editorActive" : "outline"} size="icon-sm" aria-label={`Bookmark turn ${version.id}`} onClick={() => setBookmarks(bookmarks.includes(version.id) ? bookmarks.filter(id => id !== version.id) : [...bookmarks, version.id])}><Check size={13}/></Button></div>)}{tab === "Bookmarks" && !bookmarks.length && <div className="empty-state"><HistoryIcon size={22}/><b>No bookmarks yet</b></div>}</div></div>;
 }
 
-function MoreSurface({ surface, onBack, onSelectSurface, enabledSkills, setEnabledSkills }: { surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
+function MoreSurface({ projectId, surface, onBack, onSelectSurface, enabledSkills, setEnabledSkills }: { projectId: string; surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
   const safeSurface = moreNav.some((item) => item.value === surface) ? surface : "settings";
-  return <div className="more-surface"><aside className="more-sidebar">{moreNav.map(({ label, value, icon: Icon }) => <Button key={value} aria-label={label} title={label} variant={safeSurface === value ? "editorActive" : "ghost"} size="sm" onClick={() => onSelectSurface(value)}><Icon size={14}/><span>{label}</span></Button>)}</aside><section className="more-content"><SurfaceTitle title={safeSurface === "settings" ? "Project settings" : moreNav.find((item) => item.value === safeSurface)?.label ?? "More"} onBack={onBack}/>{safeSurface === "settings" ? <SettingsSurface enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills}/> : safeSurface === "cloud" ? <CloudResources/> : safeSurface === "analytics" ? <AnalyticsExpanded/> : safeSurface === "security" ? <SecurityAudit/> : safeSurface === "payments" ? <PaymentsSurface/> : safeSurface === "agents" ? <AgentIntegrationsSurface/> : <FeatureSurface surface={safeSurface}/>}</section></div>;
+  return <div className="more-surface"><aside className="more-sidebar">{moreNav.map(({ label, value, icon: Icon }) => <Button key={value} aria-label={label} title={label} variant={safeSurface === value ? "editorActive" : "ghost"} size="sm" onClick={() => onSelectSurface(value)}><Icon size={14}/><span>{label}</span></Button>)}</aside><section className="more-content"><SurfaceTitle title={safeSurface === "settings" ? "Project settings" : moreNav.find((item) => item.value === safeSurface)?.label ?? "More"} onBack={onBack}/>{safeSurface === "settings" ? <SettingsSurface enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills}/> : safeSurface === "cloud" ? <CloudResources/> : safeSurface === "analytics" ? <AnalyticsExpanded/> : safeSurface === "security" ? <SecurityAudit/> : safeSurface === "payments" ? <PaymentsSurface/> : safeSurface === "agents" ? <AgentIntegrationsSurface/> : <FeatureSurface surface={safeSurface} projectId={projectId}/>}</section></div>;
 }
 
 function SettingsSurface({ enabledSkills, setEnabledSkills }: { enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
@@ -178,15 +178,44 @@ function SettingsSection({ title, children }: { title: string; children: React.R
 function DataRow({ label, value, action }: { label: string; value: string; action?: string }) { return <div className="data-row"><span>{label}</span><b>{value}</b>{action ? <Button variant="outline" size="sm">{action}</Button> : <span/>}</div>; }
 function ToggleRow({ label, detail, value, setValue }: { label: string; detail: string; value: boolean; setValue: (value: boolean) => void }) { return <div className="toggle-row"><div><b>{label}</b><p>{detail}</p></div><Button variant={value ? "editorActive" : "outline"} size="icon-sm" className={`editor-switch ${value ? "on" : ""}`} onClick={() => setValue(!value)} aria-label={`Toggle ${label}`}><i/></Button></div>; }
 
-function FeatureSurface({ surface }: { surface: Surface }) { const data = useMemo(() => ({ ai: ["AI usage", "Monitor models, request volume, and spend.", Sparkles], agents: ["Agent integrations", "Connect tools that extend your project agent.", Sparkles], payments: ["Payments", "Set up products, subscriptions, and checkout.", CreditCard], seo: ["SEO & AI search", "Review metadata, indexing, and accessibility.", Globe2], logs: ["Logs", "Inspect recent project activity.", Terminal] } as const), []); const item = data[surface as keyof typeof data] ?? ["Project tool", "Configure this project feature.", Settings] as const; const Icon = item[2]; if (surface === "seo") return <SeoSurface/>; if (surface === "ai") return <AiSurface/>; if (surface === "connectors") return <ConnectorsSurface/>; return <div className="feature-page"><div className="feature-empty"><span><Icon size={21}/></span><h3>{item[0]}</h3><p>{item[1]}</p><Button variant="editorActive" size="sm">Open setup</Button></div></div>; }
+function FeatureSurface({ surface, projectId }: { surface: Surface; projectId: string }) { const data = useMemo(() => ({ ai: ["AI usage", "Monitor models, request volume, and spend.", Sparkles], agents: ["Agent integrations", "Connect tools that extend your project agent.", Sparkles], payments: ["Payments", "Set up products, subscriptions, and checkout.", CreditCard], seo: ["SEO & AI search", "Review metadata, indexing, and accessibility.", Globe2], logs: ["Logs", "Inspect recent project activity.", Terminal] } as const), []); const item = data[surface as keyof typeof data] ?? ["Project tool", "Configure this project feature.", Settings] as const; const Icon = item[2]; if (surface === "seo") return <SeoSurface/>; if (surface === "ai") return <AiSurface/>; if (surface === "connectors") return <ConnectorsSurface projectId={projectId}/>; return <div className="feature-page"><div className="feature-empty"><span><Icon size={21}/></span><h3>{item[0]}</h3><p>{item[1]}</p><Button variant="editorActive" size="sm">Open setup</Button></div></div>; }
 
-function FirecrawlSurface() {
-  const [connected, setConnected] = useState(false);
-  const [url, setUrl] = useState("https://");
-  const [crawling, setCrawling] = useState(false);
-  const [lastResult, setLastResult] = useState("No crawl started yet");
-  const startCrawl = () => { if (!url.replace("https://", "").trim() || crawling) return; setCrawling(true); window.setTimeout(() => { setCrawling(false); setLastResult("12 pages extracted · Markdown ready"); }, 800); };
-  return <div className="feature-page connector-page"><div className="connector-hero"><div className="connector-icon firecrawl-icon"><Flame size={20}/></div><div><div className="feature-kicker">CONNECTOR <span className="connector-live">{connected ? "Connected" : "Not connected"}</span></div><h3>Firecrawl</h3><p>Turn websites into clean, agent-ready content for your project.</p></div><Button variant={connected ? "outline" : "editorActive"} size="sm" onClick={() => setConnected((value) => !value)}>{connected ? "Disconnect" : "Connect"}</Button></div><div className="connector-grid"><section className="connector-card"><div className="connector-card-head"><span><KeyRound size={15}/><b>API connection</b></span><span className={connected ? "status-good" : "status-muted"}>{connected ? "Ready" : "Needs setup"}</span></div><p>Use Firecrawl for crawl, scrape, and map actions from the agent.</p><label className="settings-field">API key<input type="password" placeholder={connected ? "••••••••••••••••" : "fc-..."}/></label><Button variant="outline" size="sm" onClick={() => setConnected(true)}><Check size={13}/> Save connection</Button></section><section className="connector-card"><div className="connector-card-head"><span><Globe2 size={15}/><b>Quick crawl</b></span><span className="status-muted">{lastResult}</span></div><p>Capture a site map and readable Markdown in one pass.</p><label className="settings-field">Website URL<input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com"/></label><div className="crawl-row"><Button variant="editorActive" size="sm" onClick={startCrawl}>{crawling ? "Crawling…" : "Start crawl"}</Button><Button variant="ghost" size="sm"><Settings size={13}/> Options</Button></div></section></div><div className="crawl-presets"><span><Activity size={14}/> 500 pages / month</span><span><CheckCircle2 size={14}/> Markdown extraction</span><span><ShieldCheck size={14}/> Private project data</span></div></div>;
+function FirecrawlSurface({ projectId }: { projectId: string }) {
+  const { request, invoke } = useBackend();
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [lastResult, setLastResult] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [sources, setSources] = useState<Array<{ id: string; title: string; content: string; created_at: string }>>([]);
+
+  async function loadSources() {
+    try {
+      const rows = await request<Array<{ id: string; title: string; content: string; created_at: string }>>(
+        "project_knowledge?select=id,title,content,created_at&project_id=eq." + projectId + "&order=created_at.desc&limit=8"
+      );
+      setSources(rows);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load saved project knowledge.");
+    }
+  }
+
+  useEffect(() => { void loadSources(); }, [projectId]);
+
+  async function scrape() {
+    if (!url.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    setLastResult("");
+    try {
+      const result = await invoke<{ success: boolean; title: string; sourceUrl: string; characters: number; savedAt: string }>("figurable-scrape", { projectId, url: url.trim() });
+      setLastResult("Saved " + result.title + " · " + result.characters.toLocaleString() + " characters");
+      await loadSources();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Scrape failed.");
+    } finally { setBusy(false); }
+  }
+
+  return <div className="feature-page connector-page"><div className="connector-hero"><div className="connector-icon firecrawl-icon"><Flame size={20}/></div><div><div className="feature-kicker">CONNECTOR <span className="connector-live">Server-side</span></div><h3>Firecrawl</h3><p>Extract readable website content into this project's persistent knowledge.</p></div></div><div className="connector-grid"><section className="connector-card"><div className="connector-card-head"><span><KeyRound size={15}/><b>Server credential</b></span></div><p>The API key is read only by the Supabase Edge Function. It is never entered into or bundled with the browser app.</p><div className="local-notice">Required Edge Function secret: FIRECRAWL_API_KEY</div></section><section className="connector-card"><div className="connector-card-head"><span><Globe2 size={15}/><b>Scrape a source</b></span></div><p>Fetch a public HTTPS page and save its Markdown so Build, Plan and Chat can use it as project context.</p><label className="settings-field">Website URL<input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/article"/></label><div className="crawl-row"><Button variant="editorActive" size="sm" disabled={busy || !url.trim()} onClick={() => void scrape()}>{busy ? "Scraping…" : "Scrape and save"}</Button></div>{lastResult && <p role="status" className="mt-3 text-xs text-emerald-700">{lastResult}</p>}{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}</section></div><section className="mt-5"><h3 className="mb-3 text-sm font-semibold text-zinc-900">Saved project sources</h3>{sources.length ? <div className="space-y-2">{sources.map(source => <article className="rounded-xl border border-zinc-200 bg-white p-3" key={source.id}><b className="text-sm">{source.title}</b><p className="mt-1 line-clamp-3 text-xs leading-5 text-zinc-500">{source.content}</p><small className="mt-2 block text-[11px] text-zinc-400">{new Date(source.created_at).toLocaleString()}</small></article>)}</div> : <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500">No sources saved to this project yet.</p>}</section></div>;
 }
 
-function ConnectorsSurface() { const [tab, setTab] = useState("Firecrawl"); return <div className="connectors-layout"><div className="feature-tabs">{["Firecrawl", "Supabase"].map(item => <Button variant={tab === item ? "editorActive" : "ghost"} size="sm" key={item} onClick={() => setTab(item)}>{item}</Button>)}</div>{tab === "Firecrawl" ? <FirecrawlSurface/> : <SupabaseSetup/>}</div>; }
+function ConnectorsSurface({ projectId }: { projectId: string }) { const [tab, setTab] = useState("Firecrawl"); return <div className="connectors-layout"><div className="feature-tabs">{["Firecrawl", "Supabase"].map(item => <Button variant={tab === item ? "editorActive" : "ghost"} size="sm" key={item} onClick={() => setTab(item)}>{item}</Button>)}</div>{tab === "Firecrawl" ? <FirecrawlSurface projectId={projectId}/> : <SupabaseSetup projectId={projectId}/>}</div>; }
