@@ -90,7 +90,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const runAgent = async (text: string, requestedMode: Mode) => {
     if (!text.trim() || building) return;
     const tempId = Date.now();
-    const optimistic: Message = { id: tempId, text, summary: requestedMode === "Build" ? "Sending build request…" : requestedMode === "Plan" ? "Preparing plan…" : "Waiting for response…", kind: requestedMode === "Plan" ? "plan" : "build", headline, status: "running" };
+    const optimistic: Message = { id: tempId, text, summary: requestedMode === "Build" ? "Sending build request…" : requestedMode === "Plan" ? "Preparing plan…" : "Waiting for response…", kind: requestedMode === "Plan" ? "plan" : requestedMode === "Chat" ? "question" : "build", headline, status: "running" };
     setMessages(current => [...current, optimistic]);
     setBuilding(true);
     setProjectError(null);
@@ -104,7 +104,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
       const row = rows[0];
       const mapped: Message = row ? {
         id: (Date.parse(row.created_at) || tempId) + messages.length, dbId: row.id, text: row.prompt, summary: row.summary ?? result.summary,
-        kind: row.mode === "Plan" ? "plan" : "build", headline, previewHtml: row.result_payload?.preview_html ?? null,
+        kind: row.mode === "Plan" ? "plan" : row.mode === "Chat" ? "question" : "build", headline, previewHtml: row.result_payload?.preview_html ?? null,
         planPayload: row.plan_payload, status: row.status,
       } : { ...optimistic, summary: result.summary, status: "completed", previewHtml: result.result?.preview_html ?? null, planPayload: result.plan };
       setMessages(current => current.map(message => message.id === tempId ? mapped : message));
@@ -332,7 +332,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
             <div className="chat-actions">
               <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="outline" size="icon-sm" className="composer-plus" aria-label="Add context"><Plus size={16}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="editor-menu chat-actions-menu" align="start" side="top"><DropdownMenu.Label>Prompt actions</DropdownMenu.Label><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSurface("settings")}><Settings size={13}/> Project settings</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSurface("settings")}><BookOpen size={13}/> Project context</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSurface("connectors")}><GitBranch size={13}/> GitHub and connectors</DropdownMenu.Item><DropdownMenu.Separator/><DropdownMenu.Item className="editor-menu-item" onSelect={() => setPromptHelperOpen(true)}><WandSparkles size={13}/> Improve this prompt</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item" onSelect={() => attachmentInputRef.current?.click()}><Paperclip size={13}/> Attach files</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
               <div className="composer-right">
-                <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="ghost" size="sm">{mode}<ChevronDown size={11}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="editor-menu mode-menu" align="end" side="top">{(["Build","Chat","Plan"] as Mode[]).map((item) => <DropdownMenu.Item className="mode-option" key={item} onSelect={() => { setMode(item); if (item === "Plan") { setPlanPreview(true); setSurface("preview"); } }}><span><b>{item}</b><small>{item === "Build" ? "Make changes directly" : item === "Chat" ? "Ask anything, explore ideas" : "Detailed spec for complex builds"}</small></span>{mode === item && <Check size={14}/>}</DropdownMenu.Item>)}</DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+                <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="ghost" size="sm">{mode}<ChevronDown size={11}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="editor-menu mode-menu" align="end" side="top">{(["Build","Chat","Plan"] as Mode[]).map((item) => <DropdownMenu.Item className="mode-option" key={item} onSelect={() => setMode(item)}><span><b>{item}</b><small>{item === "Build" ? "Make changes directly" : item === "Chat" ? "Ask anything, explore ideas" : "Detailed spec for complex builds"}</small></span>{mode === item && <Check size={14}/>}</DropdownMenu.Item>)}</DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
                 
                 <Button variant={draft.trim() ? "send" : "mutedRound"} size="icon-sm" aria-label="Send message" onClick={submit} disabled={building || !draft.trim()}>{building ? <span className="thinking-dot"/> : <ArrowUp size={15}/>}</Button>
               </div>
