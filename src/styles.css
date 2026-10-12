@@ -402,6 +402,20 @@ button, a { -webkit-tap-highlight-color: transparent; }
 /* A consistent light workspace shell across the dashboard and editor. */
 .dashboard-shell { background:var(--background); color:var(--foreground); }
 .dashboard-sidebar { background:color-mix(in oklab,var(--surface) 92%,transparent); border-color:var(--border); }
+.dashboard-shell,.dashboard-main { color:var(--foreground); }
+.brand-name,.nav-item,.recent-list a,.profile-copy b,.projects-heading h2,.project-title a { color:var(--foreground); }
+.nav-label,.nav-item kbd,.nav-item small,.recent-list a,.profile-copy small { color:var(--muted-foreground); }
+.profile-avatar { background:var(--accent); color:var(--accent-foreground); }
+.menu-item { color:var(--foreground); }
+.menu-item:hover,.menu-item[data-highlighted] { background:var(--accent); color:var(--accent-foreground); }
+.project-gallery .browser-dots { background:var(--surface-strong); }
+.project-gallery .project-actions>button { color:var(--muted-foreground); }
+.project-gallery .project-actions>button:hover,.project-gallery .project-actions>button.starred { background:var(--accent); color:var(--accent-foreground); }
+.view-toggle,.tabs { background:var(--surface); }
+.tabs button,.toolbar-actions select,.search-field { color:var(--foreground); }
+.tabs button.active { background:var(--accent); color:var(--accent-foreground); }
+.projects-section { background:linear-gradient(to bottom,transparent,var(--background) 35px); }
+.editor-shell button:focus-visible,.dashboard-shell button:focus-visible,.dashboard-shell a:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
 .ambient-background { opacity:.18; }
 .credit-card,.hero-composer,.prompt-suggestions button,.browser-dots,.menu-content,.more-menu,.dialog-content,.command-dialog { background:var(--surface); color:var(--foreground); border-color:var(--border); box-shadow:0 10px 34px color-mix(in oklab,var(--foreground) 9%,transparent); }
 .hero-composer { border-radius:12px; }
@@ -428,6 +442,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .panel-splitter span { display:block; width:1px; height:100%; margin:auto; background:var(--border); transition:width .15s,background .15s; }
 .panel-splitter:hover span,.panel-splitter:focus-visible span,.is-resizing .panel-splitter span { width:3px; background:var(--ring); }
 .is-resizing,.is-resizing * { cursor:col-resize!important; user-select:none!important; }
+.editor-shell.is-resizing .chat-panel { transition:none; }
 .details-canvas { display:flex; min-width:0; min-height:0; flex:1; flex-direction:column; background:var(--surface); color:var(--foreground); }
 .details-toolbar { position:relative; display:grid; min-height:52px; flex:none; grid-template-columns:minmax(160px,1fr) auto minmax(120px,1fr) minmax(180px,1fr); align-items:center; gap:14px; border-bottom:1px solid var(--border); background:color-mix(in oklab,var(--surface) 82%,transparent); padding:7px 14px; backdrop-filter:blur(18px); }
 .details-toolbar>h2 { grid-column:3; grid-row:1; justify-self:center; margin:0; font-size:15px; font-weight:600; }
