@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowRight, GitBranch, KeyRound, LoaderCircle, X } from "lucide-react";
@@ -52,7 +52,7 @@ export function ImportDialog({ open, onOpenChange, workspaceId }: { open: boolea
     if (result.warnings?.length) console.warn("GitHub import completed with warnings:", result.warnings);
   }
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
     setBusy(true); setError(""); setProgress("");
