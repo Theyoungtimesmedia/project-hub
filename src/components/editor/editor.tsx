@@ -11,25 +11,26 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useBackend } from "@/lib/backend";
 import { getAvailableSkills, getDefaultSkillCommands, type Surface } from "@/lib/mock-data";
 import { SurfacePanel } from "./surfaces";
 import { PlanCard, PlanPreview, SecretRequestCard, ChoiceCard, BuildDetailsDrawer, ProjectDialog, initialPlan, type PlanState } from "./contextual";
 
 type MessageKind = "build" | "plan" | "secret" | "question";
-type Message = { id: number; text: string; summary: string; kind: MessageKind; headline: string };
+type Message = { id: number; dbId?: string; text: string; summary: string; kind: MessageKind; headline: string; previewHtml?: string | null; planPayload?: { title?: string; text?: string; steps?: Array<{ title?: string; detail?: string }>; status?: string } | null; status?: string };
 type Device = "desktop" | "tablet" | "mobile";
 type Mode = "Build" | "Chat" | "Plan";
 type PreviewTool = "select" | "text" | "draw" | "comment";
 
 const pages = [
-  { name: "Homepage", path: "/", title: "Orbit — Money made clear", description: "A calm place for spending, saving, and everything ahead." },
-  { name: "Dashboard", path: "/dashboard", title: "Your weekly overview", description: "Balances, budgets, and goals in one view." },
-  { name: "Settings", path: "/settings", title: "Account settings", description: "Manage your profile and preferences." },
+  { name: "Preview", path: "/", title: "Project preview", description: "The latest generated project output." },
 ];
 const defaultPage = pages[0] ?? { name: "Homepage", path: "/", title: "Orbit — Money made clear", description: "A calm place for spending, saving, and everything ahead." };
 
 export function Editor({ projectId, initialPrompt }: { projectId: string; initialPrompt?: string }) {
-  const projectName = projectId === "new-project" ? "Untitled project" : projectId.split("-").map((word) => word[0]?.toUpperCase() + word.slice(1)).join(" ");
+  const { session, request, invoke } = useBackend();
+  const [projectName, setProjectName] = useState("Loading project…");
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(true);
   const [chatWidth, setChatWidth] = useState(380);
   const [resizing, setResizing] = useState(false);
@@ -38,7 +39,8 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const [device, setDevice] = useState<Device>("desktop");
   const [mode, setMode] = useState<Mode>("Build");
   const [draft, setDraft] = useState(initialPrompt ?? "");
-  const [messages, setMessages] = useState<Message[]>([{ id: 1, text: "Create a polished finance dashboard with clear weekly insights.", summary: "Built the core dashboard, responsive navigation, and analytics overview.", kind: "build", headline: "Money, made clear." }]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
   const [activeTool, setActiveTool] = useState<PreviewTool | null>(null);
   const [previewToolsVisible, setPreviewToolsVisible] = useState(true);
@@ -52,7 +54,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
   const [planPreview, setPlanPreview] = useState(false);
   const [detailsTurn, setDetailsTurn] = useState<Message | null>(null);
-  const [plan, setPlan] = useState<PlanState>(initialPlan);
+  const [plan, setPlan] = useState<PlanState>({ title: "", text: "", steps: [], status: "discarded" });
   const [headline, setHeadline] = useState("Money, made clear.");
   const [versionId, setVersionId] = useState<number | null>(null);
   const [skillIndex, setSkillIndex] = useState(0);
@@ -65,29 +67,70 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const filteredPages = pages.filter((page) => `${page.name} ${page.path}`.toLowerCase().includes(pageSearch.toLowerCase()));
 
   const previewTurn = (message: Message) => { setVersionId(message.id); setPreviewVersion(`Turn ${message.id} · ${message.text}`); setSurface("preview"); setPlanPreview(false); setActiveTool(null); };
-  const restoreVersion = () => { const version = messages.find(message => message.id === versionId); if (version) { setHeadline(version.headline); setMessages(current => [...current, { ...version, id: Date.now(), text: `Restore turn ${version.id}`, summary: "Restored this local preview snapshot. Conversation history is preserved." }]); } setVersionId(null); setPreviewVersion(null); };
-  const approvePlan = () => { if (plan.status !== "review") return; setPlan({ ...plan, status: "approved" }); setPlanPreview(false); setMode("Build"); setMessages(current => [...current, { id: Date.now(), text: `Build approved plan: ${plan.title}`, summary: "Completed the approved plan in this frontend simulation.", kind: "build", headline }]); inputRef.current?.focus(); };
-  const discardPlan = () => { setPlan({ ...plan, status: "discarded" }); setPlanPreview(false); };
+  const restoreVersion = () => {
+    const version = messages.find(message => message.id === versionId);
+    if (version?.previewHtml) setPreviewHtml(version.previewHtml);
+    setVersionId(null);
+    setPreviewVersion(null);
+  };
+
+  const runAgent = async (text: string, requestedMode: Mode) => {
+    if (!text.trim() || building) return;
+    const tempId = Date.now();
+    const optimistic: Message = { id: tempId, text, summary: requestedMode === "Build" ? "Sending build request…" : requestedMode === "Plan" ? "Preparing plan…" : "Waiting for response…", kind: requestedMode === "Plan" ? "plan" : "build", headline, status: "running" };
+    setMessages(current => [...current, optimistic]);
+    setBuilding(true);
+    setProjectError(null);
+    try {
+      const result = await invoke<{ turnId: string; mode: Mode; status: string; summary: string; result?: { preview_html?: string | null }; plan?: Message["planPayload"] }>("figurable-agent", {
+        projectId, mode: requestedMode, prompt: text, selectedContext,
+      });
+      const rows = await request<Array<{ id: string; mode: Mode; prompt: string; summary: string | null; status: string; created_at: string; result_payload: { preview_html?: string | null } | null; plan_payload: Message["planPayload"] }>(
+        "chat_turns?select=id,mode,prompt,summary,status,created_at,result_payload,plan_payload&id=eq." + result.turnId
+      );
+      const row = rows[0];
+      const mapped: Message = row ? {
+        id: (Date.parse(row.created_at) || tempId) + messages.length, dbId: row.id, text: row.prompt, summary: row.summary ?? result.summary,
+        kind: row.mode === "Plan" ? "plan" : "build", headline, previewHtml: row.result_payload?.preview_html ?? null,
+        planPayload: row.plan_payload, status: row.status,
+      } : { ...optimistic, summary: result.summary, status: "completed", previewHtml: result.result?.preview_html ?? null, planPayload: result.plan };
+      setMessages(current => current.map(message => message.id === tempId ? mapped : message));
+      if (mapped.previewHtml) setPreviewHtml(mapped.previewHtml);
+      if (requestedMode === "Plan" && mapped.planPayload) {
+        setPlan({ title: mapped.planPayload.title ?? text.slice(0, 120), text: mapped.planPayload.text ?? "", steps: (mapped.planPayload.steps ?? []).map(() => false), status: "review" });
+        setPlanPreview(true);
+        setSurface("preview");
+      }
+      if (requestedMode === "Build") { setPlanPreview(false); setSurface("preview"); setSelectedContext(null); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Agent execution failed.";
+      setMessages(current => current.map(item => item.id === tempId ? { ...item, summary: message, status: "failed" } : item));
+      setProjectError(message);
+    } finally {
+      setBuilding(false);
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  };
+
+  const approvePlan = () => {
+    if (plan.status !== "review") return;
+    const approvedText = "Implement this approved plan. Follow it in order, preserve existing behaviour, and verify the resulting files.\n\n" + plan.text;
+    setPlan(current => ({ ...current, status: "approved" }));
+    setPlanPreview(false);
+    setMode("Build");
+    void runAgent(approvedText, "Build");
+  };
+  const discardPlan = () => {
+    setPlan(current => ({ ...current, status: "discarded" }));
+    setPlanPreview(false);
+    const latestPlan = [...messages].reverse().find(message => message.kind === "plan" && message.dbId);
+    if (latestPlan?.dbId) void request("chat_turns?id=eq." + latestPlan.dbId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ plan_payload: { ...(latestPlan.planPayload ?? {}), status: "discarded" } }) }).catch(error => setProjectError(error instanceof Error ? error.message : "Could not save plan state."));
+  };
   const submit = () => {
     if (!draft.trim() || building) return;
     const text = draft.trim();
     setDraft("");
-    setBuilding(true);
-    window.setTimeout(() => {
-      const lowered = text.toLowerCase();
-      const isGoal = lowered.startsWith("/goal");
-      const kind: MessageKind = mode === "Plan" ? "plan" : lowered.includes("api key") || lowered.includes("service key") ? "secret" : lowered.includes("authentication") || lowered.includes("auth option") ? "question" : "build";
-      const summary = mode === "Plan"
-        ? "Prepared a reviewable plan without changing project files."
-        : isGoal
-          ? "Goal started. The workspace will keep the task visible until its checkpoints are complete."
-          : "Updated the preview and checked the requested changes.";
-      setMessages((current) => [...current, { id: Date.now(), text, summary, kind, headline: kind === "build" ? text.match(/headline[: ]+(.+)/i)?.[1] ?? headline : headline }]);
-      if (kind === "build") setHeadline(text.match(/headline[: ]+(.+)/i)?.[1] ?? headline);
-      if (kind === "plan") { setPlan({ ...initialPlan, title: text, text: `Objective: ${text}\n\nPreserve the editor and implement focused frontend changes with local state.` }); setPlanPreview(true); setSurface("preview"); }
-      setBuilding(false);
-      window.setTimeout(() => inputRef.current?.focus(), 0);
-    }, 700);
+    void runAgent(text, mode);
   };
 
   const toggleSurface = (next: Surface) => {
@@ -96,6 +139,38 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   };
 
   useEffect(() => { if (initialPrompt) setDraft(initialPrompt); }, [initialPrompt]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProject() {
+      try {
+        const projects = await request<Array<{ id: string; name: string }>>("projects?select=id,name&id=eq." + projectId);
+        if (!projects[0]) throw new Error("Project not found or access was removed. Return to the workspace and open a project you own or can access.");
+        if (!cancelled) setProjectName(projects[0].name);
+        const turns = await request<Array<{ id: string; mode: Mode; prompt: string; summary: string | null; status: string; created_at: string; result_payload: { preview_html?: string | null } | null; plan_payload: Message["planPayload"] }>>(
+          "chat_turns?select=id,mode,prompt,summary,status,created_at,result_payload,plan_payload&project_id=eq." + projectId + "&order=created_at.asc"
+        );
+        if (cancelled) return;
+        const mapped = turns.map((row, index): Message => ({
+          id: (Date.parse(row.created_at) || index + 1) + index, dbId: row.id, text: row.prompt,
+          summary: row.summary ?? (row.status === "failed" ? "This execution failed." : "Execution is still running."),
+          kind: row.mode === "Plan" ? "plan" : "build", headline, previewHtml: row.result_payload?.preview_html ?? null,
+          planPayload: row.plan_payload, status: row.status,
+        }));
+        setMessages(mapped);
+        const latestBuild = [...turns].reverse().find(row => row.mode === "Build" && row.status === "completed" && row.result_payload?.preview_html);
+        if (latestBuild?.result_payload?.preview_html) setPreviewHtml(latestBuild.result_payload.preview_html);
+        const latestPlan = [...turns].reverse().find(row => row.mode === "Plan" && row.plan_payload?.status === "review");
+        if (latestPlan?.plan_payload) {
+          setPlan({ title: latestPlan.plan_payload.title ?? latestPlan.prompt, text: latestPlan.plan_payload.text ?? "", steps: (latestPlan.plan_payload.steps ?? []).map(() => false), status: "review" });
+        }
+      } catch (error) {
+        if (!cancelled) setProjectError(error instanceof Error ? error.message : "Could not load project.");
+      }
+    }
+    void loadProject();
+    return () => { cancelled = true; };
+  }, [projectId, request, session?.user.id]);
   useEffect(() => { inputRef.current?.focus(); }, [surface]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -152,6 +227,8 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     <section className="editor-workspace">
       <aside className={`chat-panel ${mobileChat ? "mobile-open" : ""}`} aria-hidden={!chatOpen}>
         <div className="chat-feed">
+          {projectError && <div role="alert" className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">{projectError}</div>}
+          {messages.length === 0 && !building && <div className="mx-4 my-5 rounded-2xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-500">This project has no conversation history yet. Describe the first change below.</div>}
           {messages.map((message) => <MessageTurn key={message.id} message={message} plan={plan} onDiscardPlan={discardPlan} onAnswer={answer => setMessages(current => [...current, { id: Date.now(), text: answer, summary: `Selected ${answer} for the prototype. No authentication service was enabled.`, kind: "build", headline }])} previewing={versionId === message.id} detailsOpen={detailsTurn?.id === message.id} onDetails={() => setDetailsTurn(current => current?.id === message.id ? null : message)} onPreview={() => { previewTurn(message); setDetailsTurn(null); }} onOpenPlan={() => { setPlanPreview(true); setSurface("preview"); }} onApprovePlan={approvePlan}/>) }
           {building && <div className="thinking-live"><Sparkles size={13}/><span>Working</span><i/><i/><i/></div>}
         </div>
@@ -177,7 +254,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
         {detailsTurn ? <BuildDetailsDrawer turn={detailsTurn} onClose={() => setDetailsTurn(null)} onPreview={() => { previewTurn(detailsTurn); setDetailsTurn(null); }}/> : <>
         {surface === "preview" && <PreviewNavigation device={device} setDevice={setDevice} selectedPage={selectedPage} setSelectedPage={setSelectedPage} pageSearch={pageSearch} setPageSearch={setPageSearch} filteredPages={filteredPages} onRefresh={() => setRefreshKey((value) => value + 1)}/>} 
         <div className="surface-viewport">
-          {surface === "preview" ? planPreview ? <PlanPreview plan={plan} onChange={setPlan} onApprove={approvePlan} onDiscard={discardPlan} onClose={() => setPlanPreview(false)}/> : <PreviewCanvas headline={messages.find(message => message.id === versionId)?.headline ?? headline} setHeadline={setHeadline} key={refreshKey} device={device} activeTool={activeTool} setActiveTool={setActiveTool} toolsVisible={previewToolsVisible} setToolsVisible={setPreviewToolsVisible} onAttach={(context) => { setSelectedContext(context); setChatOpen(true); inputRef.current?.focus(); }} previewVersion={previewVersion} onBackToLatest={() => { setVersionId(null); setPreviewVersion(null); }} onRestore={restoreVersion}/> : <SurfacePanel enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills} versions={messages} onPreviewVersion={id => { const version = messages.find(message => message.id === id); if (version) previewTurn(version); }} surface={surface} onBack={() => setSurface("preview")} onSelectSurface={setSurface}/>} 
+          {surface === "preview" ? planPreview ? <PlanPreview plan={plan} onChange={setPlan} onApprove={approvePlan} onDiscard={discardPlan} onClose={() => setPlanPreview(false)}/> : <PreviewCanvas headline={messages.find(message => message.id === versionId)?.headline ?? headline} setHeadline={setHeadline} previewHtml={messages.find(message => message.id === versionId)?.previewHtml ?? previewHtml} key={refreshKey} device={device} activeTool={activeTool} setActiveTool={setActiveTool} toolsVisible={previewToolsVisible} setToolsVisible={setPreviewToolsVisible} onAttach={(context) => { setSelectedContext(context); setChatOpen(true); inputRef.current?.focus(); }} previewVersion={previewVersion} onBackToLatest={() => { setVersionId(null); setPreviewVersion(null); }} onRestore={restoreVersion}/> : <SurfacePanel enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills} versions={messages} onPreviewVersion={id => { const version = messages.find(message => message.id === id); if (version) previewTurn(version); }} surface={surface} onBack={() => setSurface("preview")} onSelectSurface={setSurface}/>} 
         </div>
         </>}
       </section>
