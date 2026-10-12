@@ -2,6 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Activity, Check, ChevronDown, ChevronRight, Clock3, Code2, Copy, Eye, EyeOff, FileCode2, FileText, KeyRound, ListChecks, LockKeyhole, MessageCircle, ShieldCheck, Terminal, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useBackend } from '@/lib/backend';
+import { useBackend } from '@/lib/backend';
 import { Button } from '@/components/ui/button';
 
 export type PlanState = { title: string; text: string; steps: boolean[]; stepDetails?: Array<{ title: string; detail: string; path?: string; action?: string }>; files?: Array<{ path: string; action: string }>; status: 'review' | 'approved' | 'discarded' };
@@ -70,8 +71,66 @@ export function BuildDetailsDrawer({ turn, onClose, onPreview }: { turn: TurnDet
   </section>;
 }
 
-export function ProjectDialog({ kind, open, onClose, projectName }: { kind: 'share' | 'publish'; open: boolean; onClose: () => void; projectName: string }) {
-  const [scope, setScope] = useState('Workspace only'); const [email, setEmail] = useState(''); const [people, setPeople] = useState(['Nathan Hanry']); const [copied, setCopied] = useState(false); const [published, setPublished] = useState(false); const [slug, setSlug] = useState('orbit-finance'); const [domain, setDomain] = useState(''); const [notice, setNotice] = useState('');
-  const url = typeof window === 'undefined' ? '' : window.location.href;
-  return <Dialog.Root open={open} onOpenChange={value => { if (!value) onClose(); }}><Dialog.Portal><Dialog.Overlay className="dialog-overlay"/><Dialog.Content className={`editor-dialog editor-light ${kind === 'publish' ? 'publish-dialog' : 'share-dialog'}`}><Dialog.Title>{kind === 'share' ? 'Share project' : 'Publish project'}</Dialog.Title><Dialog.Description>{projectName} · {kind === 'share' ? 'Demo access settings' : 'Simulated deployment'}</Dialog.Description><Dialog.Close asChild><Button variant="ghost" size="icon-sm" className="dialog-close" aria-label="Close dialog"><X size={15}/></Button></Dialog.Close>{kind === 'share' ? <><label className="form-label">Project link<div className="share-link"><input readOnly value={url}/><Button variant="editorActive" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(url); setCopied(true); } catch { setNotice('Clipboard unavailable. Select and copy the link.'); } }}>{copied ? <Check size={13}/> : <Copy size={13}/>} {copied ? 'Copied' : 'Copy link'}</Button></div></label><div className="permission-options">{['Workspace only', 'Anyone with the link'].map(item => <Button key={item} size="sm" variant={scope === item ? 'editorActive' : 'outline'} onClick={() => setScope(item)}>{item}</Button>)}</div><h3>People with access</h3><div className="collaborator-list">{people.map(person => <div key={person}><span className="workspace-avatar">{person.slice(0, 2).toUpperCase()}</span><b>{person}</b><small>{person === 'Nathan Hanry' ? 'Owner' : 'Demo invite'}</small></div>)}</div><form className="invite-row" onSubmit={e => { e.preventDefault(); if (!people.includes(email)) setPeople([...people, email]); setEmail(''); setNotice('Demo invite added. No email was sent.'); }}><input aria-label="Invite by email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="Invite by email"/><Button variant="editorActive" size="sm" type="submit">Send invite</Button></form></> : <><div className="deployment-status"><span className="cloud-status-dot"/><b>{published ? 'Demo deployment complete' : 'Not published'}</b><small>No live site will be deployed</small></div><label className="settings-field">URL subdomain<input value={slug} onChange={e => setSlug(e.target.value.replace(/[^a-z0-9-]/g, ''))}/><small>{slug || 'your-project'}.lovable.app · example address</small></label><label className="settings-field">Custom domain<input value={domain} onChange={e => setDomain(e.target.value)} placeholder="app.example.com"/></label><div className="search-preview"><small>SEARCH PREVIEW</small><b>{projectName}</b><p>A calm place for spending, saving, and everything ahead.</p></div><div className="dialog-actions"><Button variant="outline" size="sm" onClick={onClose}>Cancel</Button><Button variant="publish" size="sm" disabled={!slug} onClick={() => { setPublished(true); setNotice('Demo only. No hosting or DNS changes were made.'); }}>{published ? 'Update demo' : 'Publish demo'}</Button></div></>}{notice && <p className="local-notice" role="status">{notice}</p>}</Dialog.Content></Dialog.Portal></Dialog.Root>;
+type ShareLinkRecord = { id: string; label: string; is_active: boolean; created_at: string; expires_at: string | null };
+
+export function ProjectDialog({ open, onClose, projectName, projectId }: { open: boolean; onClose: () => void; projectName: string; projectId: string }) {
+  const { request } = useBackend();
+  const [links, setLinks] = useState<ShareLinkRecord[]>([]);
+  const [lastUrl, setLastUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+
+  async function loadLinks() {
+    try {
+      const rows = await request<ShareLinkRecord[]>("project_share_links?select=id,label,is_active,created_at,expires_at&project_id=eq." + projectId + "&order=created_at.desc");
+      setLinks(rows);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load share links.");
+    }
+  }
+
+  useEffect(() => {
+    if (open) { setError(null); setNotice(""); void loadLinks(); }
+  }, [open, projectId]);
+
+  async function createLink() {
+    setBusy(true); setError(null); setNotice("");
+    try {
+      const result = await request<{ id: string; token: string; label: string; created_at: string }>("rpc/create_project_share_link", {
+        method: "POST", body: JSON.stringify({ p_project_id: projectId, p_label: projectName + " preview" }),
+      });
+      const url = window.location.origin + "/share/" + result.token;
+      setLastUrl(url);
+      setNotice("A new read-only preview link was created. Copy it now; the token is only returned once.");
+      await loadLinks();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create a share link.");
+    } finally { setBusy(false); }
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(lastUrl);
+      setNotice("Share link copied.");
+    } catch {
+      setNotice("Clipboard access is unavailable. Select the link field and copy it manually.");
+    }
+  }
+
+  async function revoke(link: ShareLinkRecord) {
+    setBusy(true); setError(null);
+    try {
+      await request("project_share_links?id=eq." + link.id, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ is_active: false, revoked_at: new Date().toISOString() }),
+      });
+      setLinks(current => current.map(item => item.id === link.id ? { ...item, is_active: false } : item));
+      setNotice("Share link revoked. Anyone using it will no longer be able to open the preview.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not revoke this share link.");
+    } finally { setBusy(false); }
+  }
+
+  return <Dialog.Root open={open} onOpenChange={value => { if (!value) onClose(); }}><Dialog.Portal><Dialog.Overlay className="dialog-overlay"/><Dialog.Content className="editor-dialog editor-light share-dialog"><Dialog.Title>Share project preview</Dialog.Title><Dialog.Description>{projectName} · Read-only HTML preview</Dialog.Description><Dialog.Close asChild><Button variant="ghost" size="icon-sm" className="dialog-close" aria-label="Close dialog"><X size={15}/></Button></Dialog.Close><p className="text-sm leading-6 text-zinc-600">Anyone with an active link can view the latest saved self-contained preview. The link does not grant access to project files, chat history, credentials, or settings.</p><Button variant="editorActive" size="sm" disabled={busy} onClick={() => void createLink()}>{busy ? "Creating link…" : "Create new share link"}</Button>{lastUrl && <label className="form-label">New share link<div className="share-link"><input readOnly value={lastUrl} onFocus={event => event.currentTarget.select()}/><Button variant="editorActive" size="sm" onClick={() => void copyLink()}><Copy size={13}/> Copy</Button></div></label>}{error && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{notice && <p role="status" className="text-xs text-emerald-700">{notice}</p>}<h3 className="mt-4 text-sm font-semibold">Share links for this project</h3><div className="collaborator-list">{links.map(link => <div key={link.id}><span className="workspace-avatar">{link.is_active ? "↗" : "×"}</span><b>{link.label}</b><small>{link.is_active ? "Active" : "Revoked"} · {new Date(link.created_at).toLocaleDateString()}</small>{link.is_active && <Button variant="ghost" size="sm" disabled={busy} onClick={() => void revoke(link)}>Revoke</Button>}</div>)}{links.length === 0 && <p className="py-4 text-sm text-zinc-500">No share links created yet.</p>}</div></Dialog.Content></Dialog.Portal></Dialog.Root>;
 }
