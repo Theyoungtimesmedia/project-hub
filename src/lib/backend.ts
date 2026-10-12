@@ -14,9 +14,10 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 
 type BackendContextValue = {
   session: Session | null;
-  authLoading: boolean;
+  loading: boolean;
+  configured: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<{ needsEmailConfirmation: boolean }>;
+  signUp: (email: string, password: string, name?: string) => Promise<void>;
   signOut: () => Promise<void>;
   request: <T = unknown>(path: string, init?: RequestInit) => Promise<T>;
   invoke: <T = unknown>(name: string, body?: Record<string, unknown>) => Promise<T>;
@@ -61,10 +62,9 @@ export function BackendProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(error.message);
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+  const signUp = useCallback(async (email: string, password: string, name = "") => {
+    const { error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { full_name: name.trim() } } });
     if (error) throw new Error(error.message);
-    return { needsEmailConfirmation: !data.session };
   }, []);
 
   const signOut = useCallback(async () => {
@@ -136,7 +136,7 @@ export function BackendProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<BackendContextValue>(() => ({
-    session, authLoading, signIn, signUp, signOut, request, invoke, upload, download, remove,
+    session, loading: authLoading, configured: Boolean(SUPABASE_URL && SUPABASE_ANON_KEY), signIn, signUp, signOut, request, invoke, upload, download, remove,
   }), [session, authLoading, signIn, signUp, signOut, request, invoke, upload, download, remove]);
 
   return <BackendContext.Provider value={value}>{children}</BackendContext.Provider>;
