@@ -3,7 +3,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowUp, ChevronDown, ChevronsLeft, Command, Folder, Grid2X2, Home, Import,
-  List, Menu, Mic, MoreHorizontal, Paperclip, PlugZap, Search, Settings, Share2,
+  List, Menu, MoreHorizontal, Paperclip, PlugZap, Search,
   Star, User, Users, X, Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -175,7 +175,7 @@ export function Dashboard() {
       </main>
       {mobileOpen && <button className="mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)}/>} 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} workspaceId={workspaceId}/>
-      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} projects={items}/>
+      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} projects={items} query={query} onQueryChange={setQuery}/>
     </div>
   );
 }
@@ -188,6 +188,7 @@ function ProjectCard({ project, list, onStar }: { project: Project; list: boolea
   return <article className="project-card"><Link className="preview-link" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><div className="browser-dots"><span/><span/><span/><i>preview</i></div><ProjectPreview name={project.name} description={project.description} live={project.live}/></Link><div className="project-meta"><div className="project-copy"><div className="project-title"><Link to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}>{project.name}</Link>{project.live && <span className="live-pill"><i/>Live</span>}</div><p>{list ? project.description : `Edited ${project.updated}`}</p></div><div className="project-actions"><button aria-label="Star project" className={project.starred ? "starred" : ""} onClick={onStar}><Star size={15} fill={project.starred ? "currentColor" : "none"}/></button><DropdownMenu.Root><DropdownMenu.Trigger asChild><button aria-label="Project menu"><MoreHorizontal size={16}/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content" align="end"><DropdownMenu.Item className="menu-item" onSelect={() => window.open("/project/" + project.id, "_blank", "noopener,noreferrer")}>Open in new tab</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div></div></article>;
 }
 
-function SearchDialog({ open, onOpenChange, projects }: { open: boolean; onOpenChange: (o: boolean) => void; projects: Project[] }) {
-  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="dialog-overlay"/><Dialog.Content className="command-dialog"><div className="command-input"><Search size={17}/><input autoFocus placeholder="Search projects and commands..."/></div><p className="menu-label">RECENT PROJECTS</p>{projects.slice(0,4).map(project => <Link key={project.id} className="command-result" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><Folder size={15}/><span>{project.name}</span><Command size={13}/></Link>)}</Dialog.Content></Dialog.Portal></Dialog.Root>;
+function SearchDialog({ open, onOpenChange, projects, query, onQueryChange }: { open: boolean; onOpenChange: (open: boolean) => void; projects: Project[]; query: string; onQueryChange: (query: string) => void }) {
+  const filtered = projects.filter(project => (project.name + " " + project.description).toLowerCase().includes(query.toLowerCase())).slice(0, 8);
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="dialog-overlay"/><Dialog.Content className="command-dialog"><div className="command-input"><Search size={17}/><input autoFocus value={query} onChange={event => onQueryChange(event.target.value)} onKeyDown={event => { if (event.key === "Escape") onOpenChange(false); }} placeholder="Search your projects…"/></div><p className="menu-label">PROJECTS</p>{filtered.map(project => <Link key={project.id} onClick={() => onOpenChange(false)} className="command-result" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><Folder size={15}/><span>{project.name}</span><Command size={13}/></Link>)}{!filtered.length && <p className="p-5 text-sm text-zinc-500">No matching projects.</p>}</Dialog.Content></Dialog.Portal></Dialog.Root>;
 }
