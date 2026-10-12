@@ -35,9 +35,8 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
+  const envFirecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
   if (!token || !supabaseUrl || !anonKey || !serviceKey) return json({ error: "A valid signed-in session is required." }, 401);
-  if (!firecrawlKey) return json({ error: "Firecrawl is not configured. Add FIRECRAWL_API_KEY to this Supabase project's Edge Function secrets before scraping." }, 503);
 
   let body: { projectId?: string; url?: string };
   try { body = await req.json(); } catch { return json({ error: "Request body must be valid JSON." }, 400); }
@@ -51,6 +50,10 @@ Deno.serve(async (req) => {
   if (authError || !authData.user) return json({ error: "Your session is no longer valid. Sign in again." }, 401);
   const { data: project, error: projectError } = await userClient.from("projects").select("id,name").eq("id", projectId).maybeSingle();
   if (projectError || !project) return json({ error: "Project not found or you do not have access to it." }, 404);
+
+  const { data: vaultFirecrawlKey } = await admin.rpc("read_project_secret", { p_project_id: projectId, p_secret_key: "FIRECRAWL_API_KEY" });
+  const firecrawlKey = typeof vaultFirecrawlKey === "string" && vaultFirecrawlKey.trim() ? vaultFirecrawlKey : envFirecrawlKey;
+  if (!firecrawlKey) return json({ error: "Firecrawl is not configured. Save a Firecrawl key in this project's Connectors settings first." }, 503);
 
   const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
     method: "POST",
