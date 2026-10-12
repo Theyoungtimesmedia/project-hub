@@ -4,7 +4,8 @@ import {
   MoreHorizontal, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Terminal,
   Users, History as HistoryIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useBackend } from "@/lib/backend";
 import { Button } from "@/components/ui/button";
 import { SupabaseSetup, SkillsManager, SeoSurface, AiSurface, SecurityAudit, AnalyticsExpanded, CloudResources, PaymentsSurface, AgentIntegrationsSurface } from "./more-pages";
 import type { Surface } from "@/lib/mock-data";
@@ -17,9 +18,9 @@ const moreNav: { label: string; value: Surface; icon: typeof Cloud }[] = [
   { label: "Settings", value: "settings", icon: Settings },
 ];
 
-export function SurfacePanel({ surface, onBack, onSelectSurface, versions, onPreviewVersion, enabledSkills, setEnabledSkills }: { surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; versions: { id: number; text: string }[]; onPreviewVersion: (id: number) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
-  if (surface === "code") return <CodeSurface/>;
-  if (surface === "files") return <FilesSurface/>;
+export function SurfacePanel({ projectId, surface, onBack, onSelectSurface, versions, onPreviewVersion, enabledSkills, setEnabledSkills }: { projectId: string; surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; versions: { id: number; text: string }[]; onPreviewVersion: (id: number) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
+  if (surface === "code") return <CodeSurface projectId={projectId}/>;
+  if (surface === "files") return <FilesSurface projectId={projectId}/>;
   if (surface === "history") return <HistorySurface onBack={onBack} versions={versions} onPreviewVersion={onPreviewVersion}/>;
   return <MoreSurface enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills} surface={surface} onBack={onBack} onSelectSurface={onSelectSurface}/>;
 }
@@ -28,20 +29,129 @@ function SurfaceTitle({ title, detail, onBack }: { title: string; detail?: strin
   return <header className="surface-title">{onBack && <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to preview"><ArrowLeft size={14}/></Button>}<div><h2>{title}</h2>{detail && <p>{detail}</p>}</div></header>;
 }
 
-function CodeSurface() {
-  const [selectedFile, setSelectedFile] = useState("src/components/editor/editor.tsx");
+type StoredProjectFile = { id: string; project_id: string; file_path: string; file_name: string; mime_type: string; size_bytes: number; storage_path: string | null; text_content: string | null; source: string; updated_at: string };
+
+function CodeSurface({ projectId }: { projectId: string }) {
+  const { request, download, upload } = useBackend();
+  const [files, setFiles] = useState<StoredProjectFile[]>([]);
+  const [selected, setSelected] = useState<StoredProjectFile | null>(null);
+  const [content, setContent] = useState("");
+  const [original, setOriginal] = useState("");
   const [query, setQuery] = useState("");
-  const [markdownPreview, setMarkdownPreview] = useState(false);
-  const files = ["src/components/editor/editor.tsx", "src/components/editor/surfaces.tsx", "src/routes/index.tsx", "src/styles.css", "public/favicon.ico"];
-  const visible = files.filter((file) => file.includes(query.toLowerCase()));
-  const source = `import { useState } from "react";\nimport { Button } from "@/components/ui/button";\n\nexport function ProjectEditor() {\n  const [surface, setSurface] = useState("preview");\n\n  return (\n    <main className="editor">\n      <ProjectToolbar active={surface} />\n      <Preview surface={surface} />\n    </main>\n  );\n}`;
-  return <div className="code-surface"><aside className="code-tree"><div className="code-search"><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search code"/><ChevronDown size={13}/></div><div className="tree-root"><ChevronDown size={13}/><Folder size={14}/><b>project</b></div>{visible.map((file) => <Button variant={selectedFile === file ? "editorActive" : "ghost"} size="sm" className="tree-file" key={file} onClick={() => setSelectedFile(file)}><File size={13}/><span>{file}</span></Button>)}<Button variant="outline" size="sm" className="download-code"><Download size={13}/> Download codebase</Button></aside><main className="code-editor"><div className="code-editor-head"><span>{selectedFile.split("/").at(-1)} <small>TSX</small></span><div><Button variant={selectedFile.endsWith(".md") && markdownPreview ? "editorActive" : "ghost"} size="sm" onClick={() => setMarkdownPreview((value) => !value)}>Preview markdown</Button><Button variant="ghost" size="icon-sm" title="Copy file"><Copy size={13}/></Button><Button variant="ghost" size="icon-sm" title="More"><MoreHorizontal size={13}/></Button></div></div>{markdownPreview ? <div className="markdown-preview"><h2>Project editor notes</h2><p>Readable project documentation can be previewed without leaving the code workspace.</p></div> : <pre className="numbered-code"><code>{source.split("\n").map((line, index) => <span key={`${index}-${line}`}><i>{String(index + 1).padStart(2, "0")}</i>{line || " "}</span>)}</code></pre>}<div className="read-only-note"><Lock size={12}/> Read only <Button variant="editorActive" size="sm">Upgrade</Button></div></main></div>;
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadFiles(chooseFirst = false) {
+    setLoading(true);
+    setError(null);
+    try {
+      const rows = await request<StoredProjectFile[]>("project_files?select=id,project_id,file_path,file_name,mime_type,size_bytes,storage_path,text_content,source,updated_at&project_id=eq." + projectId + "&order=file_path.asc");
+      setFiles(rows);
+      if (chooseFirst && rows.length) await openFile(rows[0]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load project files.");
+    } finally { setLoading(false); }
+  }
+
+  async function openFile(file: StoredProjectFile) {
+    setSelected(file);
+    setError(null);
+    try {
+      let text = file.text_content;
+      if (text === null && file.storage_path) text = await (await download(file.storage_path)).text();
+      setContent(text ?? "");
+      setOriginal(text ?? "");
+    } catch (cause) {
+      setContent("");
+      setOriginal("");
+      setError(cause instanceof Error ? cause.message : "Could not open file.");
+    }
+  }
+
+  useEffect(() => { void loadFiles(true); }, [projectId]);
+
+  async function saveFile() {
+    if (!selected) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const path = selected.storage_path ?? projectId + "/" + selected.file_path;
+      await upload(path, new File([content], selected.file_name, { type: selected.mime_type || "text/plain" }));
+      await request("project_files?id=eq." + selected.id, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ storage_path: path, text_content: content.length <= 100000 ? content : null, size_bytes: new TextEncoder().encode(content).length, updated_at: new Date().toISOString() }) });
+      setOriginal(content);
+      await loadFiles(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save file.");
+    } finally { setSaving(false); }
+  }
+
+  function downloadCurrent() {
+    if (!selected) return;
+    const url = URL.createObjectURL(new Blob([content], { type: selected.mime_type || "text/plain" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = selected.file_name;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const visible = files.filter(file => file.file_path.toLowerCase().includes(query.toLowerCase()));
+  return <div className="code-surface"><aside className="code-tree"><div className="code-search"><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project files"/><ChevronDown size={13}/></div><div className="tree-root"><ChevronDown size={13}/><Folder size={14}/><b>Project files</b></div>{loading && <p className="px-3 py-4 text-xs text-zinc-500">Loading files…</p>}{!loading && visible.length === 0 && <p className="px-3 py-4 text-xs text-zinc-500">No files uploaded or generated yet.</p>}{visible.map(file => <Button variant={selected?.id === file.id ? "editorActive" : "ghost"} size="sm" className="tree-file" key={file.id} onClick={() => void openFile(file)}><File size={13}/><span>{file.file_path}</span></Button>)}<Button variant="outline" size="sm" className="download-code" disabled={!selected} onClick={downloadCurrent}><Download size={13}/> Download file</Button></aside><main className="code-editor"><div className="code-editor-head"><span>{selected?.file_path ?? "No file selected"} <small>{selected?.mime_type ?? ""}</small></span><div><Button variant="ghost" size="icon-sm" title="Download file" disabled={!selected} onClick={downloadCurrent}><Download size={13}/></Button><Button variant="editorActive" size="sm" disabled={!selected || content === original || saving} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save file"}</Button></div></div>{error && <p role="alert" className="m-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{selected ? <textarea aria-label={"Edit " + selected.file_path} spellCheck={false} value={content} onChange={event => setContent(event.target.value)} className="min-h-[65vh] w-full resize-none bg-white p-4 font-mono text-xs leading-6 text-zinc-800 outline-none" /> : <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">Select a file to inspect or edit its saved contents.</div>}<div className="read-only-note"><Lock size={12}/> {selected ? (content === original ? "Saved version" : "Unsaved changes") : "Private project storage"}</div></main></div>;
 }
 
-function FilesSurface() {
+function FilesSurface({ projectId }: { projectId: string }) {
+  const { session, request, upload, download } = useBackend();
+  const [files, setFiles] = useState<StoredProjectFile[]>([]);
   const [query, setQuery] = useState("");
-  const files = ["Launch brief.pdf", "Audience research.csv", "Brand direction.md", "Orbit logo.png"];
-  return <div className="full-surface"><SurfaceTitle title="Files" detail="Project documents and generated deliverables"/><div className="files-toolbar"><label><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files"/></label><Button variant="editorActive" size="sm"><Plus size={13}/> Upload file</Button></div><div className="files-grid">{files.filter((file) => file.toLowerCase().includes(query.toLowerCase())).map((file, index) => <article key={file}><span><FileText size={19}/></span><div><b>{file}</b><small>{index % 2 ? "Generated in Figurable" : "Uploaded today"}</small></div><Button variant="ghost" size="icon-sm"><MoreHorizontal size={14}/></Button></article>)}</div></div>;
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadFiles() {
+    setLoading(true);
+    try {
+      const rows = await request<StoredProjectFile[]>("project_files?select=id,project_id,file_path,file_name,mime_type,size_bytes,storage_path,text_content,source,updated_at&project_id=eq." + projectId + "&order=created_at.desc");
+      setFiles(rows);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load files.");
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { void loadFiles(); }, [projectId]);
+
+  async function handleUpload(file?: File) {
+    if (!file || !session) return;
+    const safeName = file.name.replace(/[\\\\/]+/g, "-").replace(/\\.\\.+/g, "-").slice(0, 180);
+    const path = projectId + "/" + safeName;
+    setUploading(true);
+    setError(null);
+    try {
+      await upload(path, file);
+      const text = file.size <= 100000 && (file.type.startsWith("text/") || /json|javascript|xml|svg/.test(file.type)) ? await file.text() : null;
+      await request("project_files?on_conflict=project_id,file_path", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ project_id: projectId, file_path: safeName, file_name: file.name, mime_type: file.type || "application/octet-stream", size_bytes: file.size, storage_path: path, text_content: text, source: "upload", uploaded_by: session.user.id, updated_at: new Date().toISOString() }),
+      });
+      await loadFiles();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Upload failed.");
+    } finally { setUploading(false); }
+  }
+
+  async function downloadFile(file: StoredProjectFile) {
+    if (!file.storage_path) return;
+    try {
+      const blob = await download(file.storage_path);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = file.file_name; anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Download failed."); }
+  }
+
+  const visible = files.filter(file => (file.file_name + " " + file.file_path).toLowerCase().includes(query.toLowerCase()));
+  return <div className="full-surface"><SurfaceTitle title="Files" detail="Files stored privately for this project"/><div className="files-toolbar"><label><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files"/></label><label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-blue-600 px-3 py-2 text-xs font-medium text-white">{uploading ? "Uploading…" : <><Plus size={13}/> Upload file</>}<input className="sr-only" type="file" disabled={uploading} onChange={event => { void handleUpload(event.target.files?.[0]); event.currentTarget.value = ""; }}/></label></div>{error && <p role="alert" className="m-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{loading ? <p className="p-8 text-center text-sm text-zinc-500">Loading files…</p> : <div className="files-grid">{visible.map(file => <article key={file.id}><span><FileText size={19}/></span><div><b>{file.file_name}</b><small>{file.mime_type} · {(file.size_bytes / 1024).toFixed(1)} KB · {file.source}</small></div><Button variant="ghost" size="icon-sm" aria-label={"Download " + file.file_name} onClick={() => void downloadFile(file)}><Download size={14}/></Button></article>)}{visible.length === 0 && <p className="p-8 text-center text-sm text-zinc-500">No project files yet. Upload a file or run Build mode.</p>}</div>}</div>;
 }
 
 function HistorySurface({ onBack, versions, onPreviewVersion }: { onBack: () => void; versions: { id: number; text: string }[]; onPreviewVersion: (id: number) => void }) {
