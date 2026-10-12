@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import ambient from "@/assets/ambient-studio.jpg";
 import { Button } from "@/components/ui/button";
 import { ProjectPreview } from "./project-preview";
+import { ImportDialog } from "./import-dialog";
 import type { Project } from "@/lib/mock-data";
 import { useBackend } from "@/lib/backend";
 
@@ -23,6 +24,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const { session, request, signOut } = useBackend();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [workspaceName, setWorkspaceName] = useState("Loading workspace…");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
@@ -57,6 +59,7 @@ export function Dashboard() {
         }
         const workspace = workspaces[0];
         if (!workspace) throw new Error("Supabase did not return a workspace after provisioning.");
+        if (!cancelled) setWorkspaceName(workspace.name);
         const rows = await request<Array<{ id: string; name: string; description: string | null; is_starred: boolean; published_url: string | null; created_by: string; updated_at: string }>>(
           `projects?select=id,name,description,is_starred,published_url,created_by,updated_at&workspace_id=eq.${workspace.id}&order=updated_at.desc`
         );
@@ -121,8 +124,8 @@ export function Dashboard() {
           <Button variant="ghost" size="icon" className="sidebar-toggle" aria-label="Collapse sidebar" onClick={() => { setCollapsed(!collapsed); setMobileOpen(false); }}><ChevronsLeft size={15}/></Button>
         </div>
         <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild><Button variant="outline" className="workspace-switcher"><span className="workspace-avatar">JO</span>{!collapsed && <><span className="truncate">Joshua's workspace</span><ChevronDown size={13}/></>}</Button></DropdownMenu.Trigger>
-          <DropdownMenu.Portal><DropdownMenu.Content className="menu-content" sideOffset={6}><DropdownMenu.Label className="menu-label">WORKSPACES</DropdownMenu.Label><DropdownMenu.Item className="menu-item">Joshua's workspace <span>✓</span></DropdownMenu.Item><DropdownMenu.Item className="menu-item">Build workspace</DropdownMenu.Item><DropdownMenu.Separator className="menu-separator"/><DropdownMenu.Item className="menu-item">Create workspace</DropdownMenu.Item><DropdownMenu.Item className="menu-item"><Settings size={14}/> Workspace settings</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal>
+          <DropdownMenu.Trigger asChild><Button variant="outline" className="workspace-switcher"><span className="workspace-avatar">JO</span>{!collapsed && <><span className="truncate">{workspaceName}</span><ChevronDown size={13}/></>}</Button></DropdownMenu.Trigger>
+          <DropdownMenu.Portal><DropdownMenu.Content className="menu-content" sideOffset={6}><DropdownMenu.Label className="menu-label">ACTIVE WORKSPACE</DropdownMenu.Label><DropdownMenu.Item className="menu-item" disabled>{workspaceName}<span>✓</span></DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal>
         </DropdownMenu.Root>
         <nav className="sidebar-scroll">
           <div className="nav-block">
@@ -150,9 +153,9 @@ export function Dashboard() {
           <div className="hero-composer">
             <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createProject(); } }} placeholder="Describe what you want to build..." aria-label="Project prompt"/>
             <div className="composer-bar">
-              <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="ghost" size="icon" aria-label="Attach"><Paperclip size={17}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content"><DropdownMenu.Item className="menu-item">Image or mockup</DropdownMenu.Item><DropdownMenu.Item className="menu-item">CSV or data</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Use a template</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Add a connector</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+              <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="ghost" size="icon" aria-label="Attach"><Paperclip size={17}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content"><DropdownMenu.Item className="menu-item" onSelect={() => setImportOpen(true)}>Import a GitHub repository</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
               <div className="mode-switch"><button className={mode === "Build" ? "active" : ""} onClick={() => setMode("Build")}>Build</button><button className={mode === "Plan" ? "active" : ""} onClick={() => setMode("Plan")}>Plan</button></div>
-              <span className="composer-spacer"/><Button variant="ghost" size="icon" aria-label="Voice input"><Mic size={17}/></Button><Button variant={prompt.trim() ? "primary" : "default"} size="icon" aria-label="Send prompt" onClick={createProject}><ArrowUp size={17}/></Button>
+              <span className="composer-spacer"/><Button variant={prompt.trim() ? "primary" : "default"} size="icon" aria-label="Send prompt" onClick={createProject} disabled={!prompt.trim() || !workspaceId}><ArrowUp size={17}/></Button>
             </div>
           </div>
           <div className="prompt-suggestions"><button onClick={() => setPrompt("Build a refined analytics dashboard")}>Analytics dashboard</button><button onClick={() => setPrompt("Create an editorial ecommerce store")}>Online store</button><button onClick={() => setPrompt("Design a focused portfolio")}>Portfolio</button></div>
@@ -171,7 +174,7 @@ export function Dashboard() {
         </section>
       </main>
       {mobileOpen && <button className="mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)}/>} 
-      <ImportDialog open={importOpen} onOpenChange={setImportOpen}/>
+      <ImportDialog open={importOpen} onOpenChange={setImportOpen} workspaceId={workspaceId}/>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} projects={items}/>
     </div>
   );
@@ -182,12 +185,7 @@ function SideFilter({ icon: Icon, label, count, active, collapsed, onClick }: { 
 }
 
 function ProjectCard({ project, list, onStar }: { project: Project; list: boolean; onStar: () => void }) {
-  return <article className="project-card"><Link className="preview-link" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><div className="browser-dots"><span/><span/><span/><i>preview</i></div><ProjectPreview name={project.name} description={project.description} live={project.live}/></Link><div className="project-meta"><div className="project-copy"><div className="project-title"><Link to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}>{project.name}</Link>{project.live && <span className="live-pill"><i/>Live</span>}</div><p>{list ? project.description : `Edited ${project.updated}`}</p></div><div className="project-actions"><button aria-label="Star project" className={project.starred ? "starred" : ""} onClick={onStar}><Star size={15} fill={project.starred ? "currentColor" : "none"}/></button><button aria-label="Share project"><Share2 size={15}/></button><DropdownMenu.Root><DropdownMenu.Trigger asChild><button aria-label="Project menu"><MoreHorizontal size={16}/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content" align="end"><DropdownMenu.Item className="menu-item">Open in new tab</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Rename</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Duplicate</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Project settings</DropdownMenu.Item><DropdownMenu.Separator className="menu-separator"/><DropdownMenu.Item className="menu-item danger">Delete</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div></div></article>;
-}
-
-function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [tab, setTab] = useState("GitHub");
-  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="dialog-overlay"/><Dialog.Content className="dialog-content"><Dialog.Title>Import a project</Dialog.Title><Dialog.Description>Bring in an existing codebase and continue building.</Dialog.Description><Dialog.Close asChild><Button variant="ghost" size="icon" className="dialog-close"><X size={16}/></Button></Dialog.Close><div className="dialog-tabs">{["GitHub", "ZIP upload", "Local folder"].map(t => <button className={tab === t ? "active" : ""} onClick={() => setTab(t)} key={t}>{t}</button>)}</div><label className="form-label">{tab === "GitHub" ? "Repository URL" : "Project source"}<input placeholder={tab === "GitHub" ? "https://github.com/owner/repository" : "Choose a file to continue"}/></label><div className="dialog-actions"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="primary">Import project</Button></div></Dialog.Content></Dialog.Portal></Dialog.Root>;
+  return <article className="project-card"><Link className="preview-link" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><div className="browser-dots"><span/><span/><span/><i>preview</i></div><ProjectPreview name={project.name} description={project.description} live={project.live}/></Link><div className="project-meta"><div className="project-copy"><div className="project-title"><Link to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}>{project.name}</Link>{project.live && <span className="live-pill"><i/>Live</span>}</div><p>{list ? project.description : `Edited ${project.updated}`}</p></div><div className="project-actions"><button aria-label="Star project" className={project.starred ? "starred" : ""} onClick={onStar}><Star size={15} fill={project.starred ? "currentColor" : "none"}/></button><DropdownMenu.Root><DropdownMenu.Trigger asChild><button aria-label="Project menu"><MoreHorizontal size={16}/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content" align="end"><DropdownMenu.Item className="menu-item" onSelect={() => window.open("/project/" + project.id, "_blank", "noopener,noreferrer")}>Open in new tab</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div></div></article>;
 }
 
 function SearchDialog({ open, onOpenChange, projects }: { open: boolean; onOpenChange: (o: boolean) => void; projects: Project[] }) {
