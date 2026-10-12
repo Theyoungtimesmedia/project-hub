@@ -297,7 +297,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
         <nav className="workspace-drawer-nav"><Link to="/dashboard" onClick={() => setWorkspaceMenuOpen(false)}><Monitor size={15}/> Dashboard</Link><button onClick={() => setSurface("history")}><History size={15}/> History <span>⌘H</span></button><button onClick={() => setSurface("settings")}><Settings size={15}/> Project settings</button></nav>
         <div className="workspace-drawer-label">Recent projects</div>
         <div className="workspace-recent"><Link to="/project/$projectId" params={{ projectId: "orbit-finance" }} search={{ prompt: "" }} onClick={() => setWorkspaceMenuOpen(false)}><i className="tone-coral"/><span>Orbit Finance</span><ChevronRight size={13}/></Link><Link to="/project/$projectId" params={{ projectId: "atelier-store" }} search={{ prompt: "" }} onClick={() => setWorkspaceMenuOpen(false)}><i className="tone-blue"/><span>Atelier Store</span><ChevronRight size={13}/></Link><Link to="/project/$projectId" params={{ projectId: "signal-notes" }} search={{ prompt: "" }} onClick={() => setWorkspaceMenuOpen(false)}><i className="tone-mint"/><span>Signal Notes</span><ChevronRight size={13}/></Link></div>
-        <div className="workspace-drawer-foot"><BookOpen size={14}/><span>Workspace shortcuts</span><kbd>⌘K</kbd></div>
+        <div className="workspace-drawer-foot"><BookOpen size={14}/><span>Project workspace</span></div>
       </aside>
     </>}
 
@@ -359,10 +359,10 @@ function PreviewNavigation({ device, setDevice, selectedPage, setSelectedPage, p
     <div className="preview-address-controls">
       <Button variant="ghost" size="icon-sm" aria-label={`Switch preview from ${device} to ${nextDevice}`} title={`Switch to ${nextDevice} view`} onClick={() => setDevice(nextDevice)}><DeviceIcon size={15}/></Button>
       <Button variant="ghost" size="icon-sm" title="Refresh preview" onClick={onRefresh}><RefreshCw size={14}/></Button><Button variant="ghost" size="icon-sm" title="Open preview in a new tab" aria-label="Open preview in a new tab" disabled={!hasPreview} onClick={onOpenPreview}><ExternalLink size={14}/></Button>
-      <DropdownMenu.Root onOpenChange={(open) => { if (!open) setPageSearch(""); }}><DropdownMenu.Trigger asChild><Button variant="ghost" size="sm" className="route-pill"><span>{selectedPage.path}</span><ChevronDown size={12}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="editor-menu page-menu" align="center"><div className="page-search"><Search size={13}/><input value={pageSearch} onChange={(event) => setPageSearch(event.target.value)} placeholder="Find page or enter path" autoFocus/></div>{filteredPages.map((page) => <DropdownMenu.Item className="page-option" key={page.path} onSelect={() => setSelectedPage(page)}><div><b>{page.name}</b><small>{page.path}</small></div><div className="page-preview-cards"><span><b>Social</b>{page.title}</span><span><b>Search</b>{page.description}</span></div>{selectedPage.path === page.path && <Check size={13}/>}</DropdownMenu.Item>)}</DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
-      <Button variant="ghost" size="icon-sm" title="Open preview in new tab" onClick={() => window.open("/project/orbit-finance", "_blank", "noopener,noreferrer")}><ExternalLink size={14}/></Button>
+      <DropdownMenu.Root onOpenChange={(open) => { if (!open) setPageSearch(""); }}><DropdownMenu.Trigger asChild><Button variant="ghost" size="sm" className="route-pill"><span>{selectedPage.path}</span><ChevronDown size={12}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="editor-menu page-menu" align="center"><div className="page-search"><Search size={13}/><input value={pageSearch} onChange={(event) => setPageSearch(event.target.value)} placeholder="Find page" autoFocus/></div>{filteredPages.map((page) => <DropdownMenu.Item className="page-option" key={page.path} onSelect={() => setSelectedPage(page)}><div><b>{page.name}</b><small>{page.path}</small></div>{selectedPage.path === page.path && <Check size={13}/>}</DropdownMenu.Item>)}</DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+      
     </div>
-    <span className="preview-status"><i/> Live</span>
+    <span className="preview-status"><i/> {hasPreview ? "Preview ready" : "No preview yet"}</span>
   </div>;
 }
 
