@@ -99,7 +99,9 @@ export function ProjectDialog({ open, onClose, projectName, projectId }: { open:
       const result = await request<{ id: string; token: string; label: string; created_at: string }>("rpc/create_project_share_link", {
         method: "POST", body: JSON.stringify({ p_project_id: projectId, p_label: projectName + " preview" }),
       });
-      const url = window.location.origin + "/share/" + result.token;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      if (!supabaseUrl) throw new Error("Supabase is not configured for public preview links.");
+      const url = supabaseUrl.replace(/\/$/, "") + "/functions/v1/figurable-share?token=" + encodeURIComponent(result.token);
       setLastUrl(url);
       setNotice("A new read-only preview link was created. Copy it now; the token is only returned once.");
       await loadLinks();
