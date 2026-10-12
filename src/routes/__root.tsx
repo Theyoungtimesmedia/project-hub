@@ -12,6 +12,8 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { BackendProvider } from "@/lib/backend";
+import { BackendGate } from "@/components/auth/backend-gate";
 
 function NotFoundComponent() {
   return (
@@ -116,8 +118,12 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <BackendProvider>
+        <BackendGate>
+          {/* Nested routes are protected by the Supabase session gate. */}
+          <Outlet />
+        </BackendGate>
+      </BackendProvider>
     </QueryClientProvider>
   );
 }
