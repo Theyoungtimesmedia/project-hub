@@ -30,6 +30,7 @@ const defaultPage = pages[0] ?? { name: "Homepage", path: "/", title: "Orbit —
 export function Editor({ projectId, initialPrompt }: { projectId: string; initialPrompt?: string }) {
   const { session, request, invoke, upload } = useBackend();
   const [projectName, setProjectName] = useState("Loading project…");
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(true);
   const [chatWidth, setChatWidth] = useState(380);
@@ -138,6 +139,15 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     void runAgent(text, mode);
   };
 
+  const updateEnabledSkills = (items: string[]) => {
+    setEnabledSkills(items);
+    if (!workspaceId) return;
+    void Promise.all(skillCommands.map(skill => request(
+      "skills?workspace_id=eq." + workspaceId + "&command=eq." + encodeURIComponent(skill.command),
+      { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ is_enabled: items.includes(skill.command), updated_at: new Date().toISOString() }) }
+    ))).catch(error => setProjectError(error instanceof Error ? error.message : "Could not save skill settings."));
+  };
+
   const toggleSurface = (next: Surface) => {
     if (surface === next && next !== "preview") setSurface("preview");
     else setSurface(next);
@@ -149,9 +159,9 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     let cancelled = false;
     async function loadProject() {
       try {
-        const projects = await request<Array<{ id: string; name: string }>>("projects?select=id,name,workspace_id&id=eq." + projectId);
+        const projects = await request<Array<{ id: string; name: string; workspace_id: string }>>("projects?select=id,name,workspace_id&id=eq." + projectId);
         if (!projects[0]) throw new Error("Project not found or access was removed. Return to the workspace and open a project you own or can access.");
-        if (!cancelled) setProjectName(projects[0].name);
+        if (!cancelled) { setProjectName(projects[0].name); setWorkspaceId(projects[0].workspace_id); }
         const skillRows = await request<Array<{ command: string; name: string; description: string; instructions: string; is_enabled: boolean }>>(
           "skills?select=command,name,description,instructions,is_enabled&workspace_id=eq." + projects[0].workspace_id + "&order=name.asc"
         );
@@ -266,7 +276,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
         {detailsTurn ? <BuildDetailsDrawer turn={detailsTurn} onClose={() => setDetailsTurn(null)} onPreview={() => { previewTurn(detailsTurn); setDetailsTurn(null); }}/> : <>
         {surface === "preview" && <PreviewNavigation device={device} setDevice={setDevice} selectedPage={selectedPage} setSelectedPage={setSelectedPage} pageSearch={pageSearch} setPageSearch={setPageSearch} filteredPages={filteredPages} onRefresh={() => setRefreshKey((value) => value + 1)}/>} 
         <div className="surface-viewport">
-          {surface === "preview" ? planPreview ? <PlanPreview plan={plan} onChange={setPlan} onApprove={approvePlan} onDiscard={discardPlan} onClose={() => setPlanPreview(false)}/> : <PreviewCanvas previewHtml={messages.find(message => message.id === versionId)?.previewHtml ?? previewHtml} onPreviewHtmlChange={async (html) => { setPreviewHtml(html); try { const file = new File([html], "index.html", { type: "text/html" }); await uploadPreviewFile(file, projectId, request, upload); } catch (error) { setProjectError(error instanceof Error ? error.message : "Could not save inline text edits."); } }} key={refreshKey} device={device} activeTool={activeTool} setActiveTool={setActiveTool} toolsVisible={previewToolsVisible} setToolsVisible={setPreviewToolsVisible} onAttach={(context) => { setSelectedContext(context); setChatOpen(true); inputRef.current?.focus(); }} previewVersion={previewVersion} onBackToLatest={() => { setVersionId(null); setPreviewVersion(null); }} onRestore={restoreVersion}/> : <SurfacePanel projectId={projectId} enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills} versions={messages} onPreviewVersion={id => { const version = messages.find(message => message.id === id); if (version) previewTurn(version); }} surface={surface} onBack={() => setSurface("preview")} onSelectSurface={setSurface}/>} 
+          {surface === "preview" ? planPreview ? <PlanPreview plan={plan} onChange={setPlan} onApprove={approvePlan} onDiscard={discardPlan} onClose={() => setPlanPreview(false)}/> : <PreviewCanvas previewHtml={messages.find(message => message.id === versionId)?.previewHtml ?? previewHtml} onPreviewHtmlChange={async (html) => { setPreviewHtml(html); try { const file = new File([html], "index.html", { type: "text/html" }); await uploadPreviewFile(file, projectId, request, upload); } catch (error) { setProjectError(error instanceof Error ? error.message : "Could not save inline text edits."); } }} key={refreshKey} device={device} activeTool={activeTool} setActiveTool={setActiveTool} toolsVisible={previewToolsVisible} setToolsVisible={setPreviewToolsVisible} onAttach={(context) => { setSelectedContext(context); setChatOpen(true); inputRef.current?.focus(); }} previewVersion={previewVersion} onBackToLatest={() => { setVersionId(null); setPreviewVersion(null); }} onRestore={restoreVersion}/> : <SurfacePanel projectId={projectId} enabledSkills={enabledSkills} setEnabledSkills={updateEnabledSkills} versions={messages} onPreviewVersion={id => { const version = messages.find(message => message.id === id); if (version) previewTurn(version); }} surface={surface} onBack={() => setSurface("preview")} onSelectSurface={setSurface}/>} 
         </div>
         </>}
       </section>
