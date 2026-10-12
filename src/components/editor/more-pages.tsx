@@ -139,9 +139,55 @@ export function SeoSurface() {
   const [title, setTitle] = useState('Orbit — Money made clear'); const [description, setDescription] = useState('A calm place for spending, saving, and everything ahead.'); const [image, setImage] = useState(''); const [card, setCard] = useState('summary_large_image'); const [indexing, setIndexing] = useState(true); const [llms, setLlms] = useState(false); const [preview, setPreview] = useState(false); const [notice, setNotice] = useState('');
   return <div className="expanded-page"><div className="seo-previews"><div className="search-preview"><small>GOOGLE SEARCH · orbit-finance.lovable.app</small><b>{title}</b><p>{description}</p></div><div className="social-preview"><div className="social-cover">ORBIT</div><small>SOCIAL PREVIEW · {card}</small><b>{title}</b><p>{description}</p></div></div><h3>Metadata</h3><label className="settings-field">Page title<input value={title} onChange={e => setTitle(e.target.value)}/></label><label className="settings-field">Meta description<textarea value={description} onChange={e => setDescription(e.target.value)}/></label><label className="settings-field">OG image URL<input type="url" value={image} onChange={e => setImage(e.target.value)} placeholder="https://example.com/cover.jpg"/></label><label className="settings-field">Twitter card type<select value={card} onChange={e => setCard(e.target.value)}><option>summary_large_image</option><option>summary</option></select></label><Toggle label="Allow AI search indexing" value={indexing} onChange={setIndexing}/><Toggle label="Generate llms.txt" value={llms} onChange={setLlms}/><div className="context-actions"><Button variant="outline" size="sm" disabled={!llms} onClick={() => setPreview(!preview)}>Preview llms.txt</Button><Button variant="editorActive" size="sm" onClick={() => setNotice(`Demo audit: ${title ? 'title present' : 'title missing'} · ${description ? 'description present' : 'description missing'} · ${image ? 'cover URL set' : 'cover URL missing'}`)}>Audit SEO with AI</Button><Button variant="outline" size="sm" onClick={() => setNotice('Metadata saved in this session only.')}>Save metadata</Button></div>{preview && llms && <pre className="terminal-output">{`# ${title}\n\n${description}\n\n## Pages\n- /: Overview\n- /dashboard: Weekly insights`}</pre>}<p className="local-notice" role="status">{notice || 'Preview settings only. Published metadata and crawler access are unchanged.'}</p></div>;
 }
-export function AiSurface() {
-  const [instructions, setInstructions] = useState('Preserve the compact editor. Use typed local state and accessible controls. Keep credentials out of client code.'); const [notice, setNotice] = useState('');
-  return <div className="expanded-page"><h3>Model routing</h3><div className="routing-row"><Activity size={19}/><div><b>Lovable AI Gateway</b><small>No live model connected · frontend simulation</small></div><span className="connector-live">Demo</span></div><div className="metrics-row">{[['Tokens processed', '248k'], ['Prompt cache hits', '84%'], ['Response latency', '1.1s']].map(([label, value]) => <article key={label}><small>{label}</small><b>{value}</b><em>Sample metric</em></article>)}</div><details open><summary>System prompt & agent instructions</summary><label className="settings-field">Project steering<textarea value={instructions} onChange={e => setInstructions(e.target.value)}/></label><Button variant="editorActive" size="sm" onClick={() => setNotice('Instructions saved for this session.')}>Save instructions</Button></details><p className="local-notice" role="status">{notice || 'No AI requests are made.'}</p></div>;
+export function AiSurface({ projectId }: { projectId: string }) {
+  const { request } = useBackend();
+  const [apiKey, setApiKey] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
+  const [instructions, setInstructions] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const projects = await request<Array<{ instructions: string | null }>>("projects?select=instructions&id=eq." + projectId);
+        const secrets = await request<Array<{ secret_key: string }>>("project_secrets?select=secret_key&project_id=eq." + projectId + "&secret_key=eq.OPENROUTER_API_KEY");
+        if (!cancelled) {
+          setInstructions(projects[0]?.instructions ?? "");
+          setKeySaved(secrets.length > 0);
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load AI settings.");
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, request]);
+
+  async function saveKey() {
+    if (!apiKey.trim()) return;
+    setBusy(true); setError(null); setNotice("");
+    try {
+      await request("rpc/store_project_secret", { method: "POST", body: JSON.stringify({ p_project_id: projectId, p_secret_key: "OPENROUTER_API_KEY", p_secret_value: apiKey.trim() }) });
+      setApiKey(""); setKeySaved(true); setNotice("OpenRouter credential encrypted and saved to Supabase Vault.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save provider credential.");
+    } finally { setBusy(false); }
+  }
+
+  async function saveInstructions() {
+    setBusy(true); setError(null); setNotice("");
+    try {
+      await request("projects?id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ instructions, updated_at: new Date().toISOString() }) });
+      setNotice("Project instructions saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save project instructions.");
+    } finally { setBusy(false); }
+  }
+
+  return <div className="expanded-page"><h3>AI provider</h3><p className="text-sm text-zinc-500">Build, Plan and Chat use the server-side Figurable agent. The default model route is OpenRouter's free-model router; provider availability and rate limits still apply.</p><section className="mt-4 rounded-xl border border-zinc-200 bg-white p-4"><div className="flex items-center justify-between gap-3"><div><b className="text-sm">OpenRouter API key</b><p className="mt-1 text-xs leading-5 text-zinc-500">Saved in Supabase Vault and read only by the Edge Function. It is never returned to the browser.</p></div><span className={keySaved ? "status-good" : "status-muted"}>{keySaved ? "Credential saved" : "Not configured"}</span></div><label className="settings-field mt-3">API key<input type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={keySaved ? "Enter a replacement key to rotate it" : "Paste API key"} /></label><Button variant="editorActive" size="sm" disabled={busy || !apiKey.trim()} onClick={() => void saveKey()}>{busy ? "Saving…" : keySaved ? "Replace encrypted key" : "Save encrypted key"}</Button></section><details open className="mt-5"><summary>Persistent project instructions</summary><label className="settings-field">Instructions applied to Build, Plan and Chat<textarea value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Describe project conventions, requirements and things that must not change."/></label><Button variant="editorActive" size="sm" disabled={busy} onClick={() => void saveInstructions()}>{busy ? "Saving…" : "Save project instructions"}</Button></details>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-emerald-700">{notice}</p>}</div>;
 }
 export function SecurityAudit() {
   const [scanned, setScanned] = useState(false); const [csp, setCsp] = useState(false); const [origins, setOrigins] = useState("'self'"); const [notice, setNotice] = useState('');
