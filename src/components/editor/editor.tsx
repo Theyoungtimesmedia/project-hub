@@ -17,7 +17,7 @@ import { SurfacePanel } from "./surfaces";
 import { PlanCard, PlanPreview, SecretRequestCard, ChoiceCard, BuildDetailsDrawer, ProjectDialog, type PlanState } from "./contextual";
 
 type MessageKind = "build" | "plan" | "secret" | "question";
-type Message = { id: number; dbId?: string; text: string; summary: string; kind: MessageKind; headline: string; previewHtml?: string | null; planPayload?: { title?: string; text?: string; steps?: Array<{ title?: string; detail?: string }>; status?: string } | null; status?: string };
+type Message = { id: number; dbId?: string; text: string; summary: string; kind: MessageKind; headline: string; previewHtml?: string | null; planPayload?: { title?: string; text?: string; steps?: Array<{ title?: string; detail?: string; completed?: boolean; path?: string; action?: string }>; files?: Array<{ path: string; action: string }>; status?: string } | null; status?: string };
 type Device = "desktop" | "tablet" | "mobile";
 type Mode = "Build" | "Chat" | "Plan";
 type PreviewTool = "select" | "text" | "draw" | "comment";
@@ -108,7 +108,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
       setMessages(current => current.map(message => message.id === tempId ? mapped : message));
       if (mapped.previewHtml) setPreviewHtml(mapped.previewHtml);
       if (requestedMode === "Plan" && mapped.planPayload) {
-        setPlan({ title: mapped.planPayload.title ?? text.slice(0, 120), text: mapped.planPayload.text ?? "", steps: (mapped.planPayload.steps ?? []).map(() => false), status: "review" });
+        setPlan({ title: mapped.planPayload.title ?? text.slice(0, 120), text: mapped.planPayload.text ?? "", steps: (mapped.planPayload.steps ?? []).map(step => Boolean(step.completed)), stepDetails: (mapped.planPayload.steps ?? []).map(step => ({ title: step.title ?? "Implementation step", detail: step.detail ?? "" })), files: mapped.planPayload.files ?? [], status: (mapped.planPayload.status === "approved" || mapped.planPayload.status === "discarded" ? mapped.planPayload.status : "review") });
         setPlanPreview(true);
         setSurface("preview");
       }
@@ -123,19 +123,29 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     }
   };
 
+  const updatePlan = (value: PlanState) => {
+    setPlan(value);
+    const latestPlan = [...messages].reverse().find(message => message.kind === "plan" && message.dbId);
+    if (!latestPlan?.dbId) return;
+    const payload = {
+      title: value.title, text: value.text,
+      steps: (value.stepDetails ?? []).map((step, index) => ({ ...step, completed: Boolean(value.steps[index]) })),
+      files: value.files ?? [], status: value.status,
+    };
+    void request("chat_turns?id=eq." + latestPlan.dbId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ plan_payload: payload }) })
+      .catch(error => setProjectError(error instanceof Error ? error.message : "Could not save plan changes."));
+  };
   const approvePlan = () => {
     if (plan.status !== "review") return;
     const approvedText = "Implement this approved plan. Follow it in order, preserve existing behaviour, and verify the resulting files.\n\n" + plan.text;
-    setPlan(current => ({ ...current, status: "approved" }));
+    updatePlan({ ...plan, status: "approved" });
     setPlanPreview(false);
     setMode("Build");
     void runAgent(approvedText, "Build");
   };
   const discardPlan = () => {
-    setPlan(current => ({ ...current, status: "discarded" }));
+    updatePlan({ ...plan, status: "discarded" });
     setPlanPreview(false);
-    const latestPlan = [...messages].reverse().find(message => message.kind === "plan" && message.dbId);
-    if (latestPlan?.dbId) void request("chat_turns?id=eq." + latestPlan.dbId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ plan_payload: { ...(latestPlan.planPayload ?? {}), status: "discarded" } }) }).catch(error => setProjectError(error instanceof Error ? error.message : "Could not save plan state."));
   };
   const submit = () => {
     if (!draft.trim() || building) return;
@@ -189,7 +199,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
         if (latestBuild?.result_payload?.preview_html) setPreviewHtml(latestBuild.result_payload.preview_html);
         const latestPlan = [...turns].reverse().find(row => row.mode === "Plan" && row.plan_payload?.status === "review");
         if (latestPlan?.plan_payload) {
-          setPlan({ title: latestPlan.plan_payload.title ?? latestPlan.prompt, text: latestPlan.plan_payload.text ?? "", steps: (latestPlan.plan_payload.steps ?? []).map(() => false), status: "review" });
+          setPlan({ title: latestPlan.plan_payload.title ?? latestPlan.prompt, text: latestPlan.plan_payload.text ?? "", steps: (latestPlan.plan_payload.steps ?? []).map(step => Boolean(step.completed)), stepDetails: (latestPlan.plan_payload.steps ?? []).map(step => ({ title: step.title ?? "Implementation step", detail: step.detail ?? "" })), files: latestPlan.plan_payload.files ?? [], status: "review" });
         }
       } catch (error) {
         if (!cancelled) setProjectError(error instanceof Error ? error.message : "Could not load project.");
@@ -281,7 +291,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
         {detailsTurn ? <BuildDetailsDrawer turn={detailsTurn} onClose={() => setDetailsTurn(null)} onPreview={() => { previewTurn(detailsTurn); setDetailsTurn(null); }}/> : <>
         {surface === "preview" && <PreviewNavigation device={device} setDevice={setDevice} selectedPage={selectedPage} setSelectedPage={setSelectedPage} pageSearch={pageSearch} setPageSearch={setPageSearch} filteredPages={filteredPages} hasPreview={Boolean(previewHtml)} onOpenPreview={() => { if (!previewHtml) return; const url = URL.createObjectURL(new Blob([previewHtml], { type: "text/html" })); window.open(url, "_blank", "noopener,noreferrer"); window.setTimeout(() => URL.revokeObjectURL(url), 60000); }} onRefresh={() => setRefreshKey((value) => value + 1)}/>} 
         <div className="surface-viewport">
-          {surface === "preview" ? planPreview ? <PlanPreview plan={plan} onChange={setPlan} onApprove={approvePlan} onDiscard={discardPlan} onClose={() => setPlanPreview(false)}/> : <PreviewCanvas previewHtml={messages.find(message => message.id === versionId)?.previewHtml ?? previewHtml} onPreviewHtmlChange={async (html) => { setPreviewHtml(html); try { const file = new File([html], "index.html", { type: "text/html" }); await uploadPreviewFile(file, projectId, request, upload); } catch (error) { setProjectError(error instanceof Error ? error.message : "Could not save inline text edits."); } }} key={refreshKey} device={device} activeTool={activeTool} setActiveTool={setActiveTool} toolsVisible={previewToolsVisible} setToolsVisible={setPreviewToolsVisible} onAttach={(context) => { setSelectedContext(context); setChatOpen(true); inputRef.current?.focus(); }} previewVersion={previewVersion} onBackToLatest={() => { setVersionId(null); setPreviewVersion(null); }} onRestore={restoreVersion}/> : <SurfacePanel projectId={projectId} enabledSkills={enabledSkills} setEnabledSkills={updateEnabledSkills} versions={messages.filter(message => Boolean(message.previewHtml))} onPreviewVersion={id => { const version = messages.find(message => message.id === id); if (version) previewTurn(version); }} surface={surface} onBack={() => setSurface("preview")} onSelectSurface={setSurface}/>} 
+          {surface === "preview" ? planPreview ? <PlanPreview plan={plan} onChange={updatePlan} onApprove={approvePlan} onDiscard={discardPlan} onClose={() => setPlanPreview(false)}/> : <PreviewCanvas previewHtml={messages.find(message => message.id === versionId)?.previewHtml ?? previewHtml} onPreviewHtmlChange={async (html) => { setPreviewHtml(html); try { const file = new File([html], "index.html", { type: "text/html" }); await uploadPreviewFile(file, projectId, request, upload); } catch (error) { setProjectError(error instanceof Error ? error.message : "Could not save inline text edits."); } }} key={refreshKey} device={device} activeTool={activeTool} setActiveTool={setActiveTool} toolsVisible={previewToolsVisible} setToolsVisible={setPreviewToolsVisible} onAttach={(context) => { setSelectedContext(context); setChatOpen(true); inputRef.current?.focus(); }} previewVersion={previewVersion} onBackToLatest={() => { setVersionId(null); setPreviewVersion(null); }} onRestore={restoreVersion}/> : <SurfacePanel projectId={projectId} enabledSkills={enabledSkills} setEnabledSkills={updateEnabledSkills} versions={messages.filter(message => Boolean(message.previewHtml))} onPreviewVersion={id => { const version = messages.find(message => message.id === id); if (version) previewTurn(version); }} surface={surface} onBack={() => setSurface("preview")} onSelectSurface={setSurface}/>} 
         </div>
         </>}
       </section>
