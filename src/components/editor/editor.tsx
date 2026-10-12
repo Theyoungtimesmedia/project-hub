@@ -28,7 +28,7 @@ const pages = [
 const defaultPage = pages[0]!;
 
 export function Editor({ projectId, initialPrompt }: { projectId: string; initialPrompt?: string }) {
-  const { session, request, invoke, upload } = useBackend();
+  const { session, request, invoke, upload, download } = useBackend();
   const [projectName, setProjectName] = useState("Loading project…");
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -237,6 +237,19 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
         setMessages(mapped);
         const latestBuild = [...turns].reverse().find(row => row.mode === "Build" && row.status === "completed" && row.result_payload?.preview_html);
         if (latestBuild?.result_payload?.preview_html) setPreviewHtml(latestBuild.result_payload.preview_html);
+        // Inline visual edits are saved as project_files/index.html; prefer that current file over an older build result.
+        const previewFiles = await request<Array<{ text_content: string | null; storage_path: string | null }>>(
+          "project_files?select=text_content,storage_path&project_id=eq." + projectId + "&file_path=eq.index.html"
+        );
+        if (!cancelled && previewFiles[0]?.text_content) setPreviewHtml(previewFiles[0].text_content);
+        else if (!cancelled && previewFiles[0]?.storage_path) {
+          try {
+            const blob = await download(previewFiles[0].storage_path);
+            if (blob.size <= 700000) setPreviewHtml(await blob.text());
+          } catch (cause) {
+            if (!cancelled) setProjectError(cause instanceof Error ? cause.message : "Could not restore the saved preview file.");
+          }
+        }
         const latestPlan = [...turns].reverse().find(row => row.mode === "Plan" && row.plan_payload?.status === "review");
         if (latestPlan?.plan_payload) {
           setPlan({ title: latestPlan.plan_payload.title ?? latestPlan.prompt, text: latestPlan.plan_payload.text ?? "", steps: (latestPlan.plan_payload.steps ?? []).map(step => Boolean(step.completed)), stepDetails: (latestPlan.plan_payload.steps ?? []).map(step => ({ title: step.title ?? "Implementation step", detail: step.detail ?? "" })), files: latestPlan.plan_payload.files ?? [], status: "review" });
@@ -247,7 +260,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     }
     void loadProject();
     return () => { cancelled = true; };
-  }, [projectId, request, session?.user.id]);
+  }, [projectId, request, download, session?.user.id]);
   useEffect(() => { inputRef.current?.focus(); }, [surface]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
