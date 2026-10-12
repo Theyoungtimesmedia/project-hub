@@ -30,10 +30,10 @@ function SurfaceTitle({ title, detail, onBack }: { title: string; detail?: strin
 
 function isEditableText(mimeType: string) { return mimeType.startsWith("text/") || /json|javascript|xml|svg/.test(mimeType); }
 
-async function deleteStoredFile(path: string, request: <T,>(path: string, init?: RequestInit) => Promise<T>, projectId: string) {\n  const storagePath = path;\n  const response = await fetch((import.meta.env.VITE_SUPABASE_URL as string).replace(/\\/$/, "") + "/storage/v1/object/project-files/" + storagePath.split("/").map(encodeURIComponent).join("/"), { method: "DELETE", headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string, Authorization: "Bearer " + (JSON.parse(sessionStorage.getItem("figurable.auth.session") ?? "{}").access_token ?? "") } });\n  if (!response.ok) throw new Error("Could not delete stored file.");\n  void request; void projectId;\n}\n\ntype StoredProjectFile = { id: string; project_id: string; file_path: string; file_name: string; mime_type: string; size_bytes: number; storage_path: string | null; text_content: string | null; source: string; updated_at: string };
+type StoredProjectFile = { id: string; project_id: string; file_path: string; file_name: string; mime_type: string; size_bytes: number; storage_path: string | null; text_content: string | null; source: string; updated_at: string };
 
 function CodeSurface({ projectId }: { projectId: string }) {
-  const { request, download, upload } = useBackend();
+  const { request, download, upload, remove } = useBackend();
   const [files, setFiles] = useState<StoredProjectFile[]>([]);
   const [selected, setSelected] = useState<StoredProjectFile | null>(null);
   const [content, setContent] = useState("");
@@ -123,12 +123,7 @@ function CodeSurface({ projectId }: { projectId: string }) {
     if (!selected || !window.confirm("Delete " + selected.file_path + " from this project? This cannot be undone.")) return;
     setSaving(true); setError(null);
     try {
-      if (selected.storage_path) {
-        const encoded = selected.storage_path.split("/").map(encodeURIComponent).join("/");
-        const { error: storageError } = await request<{ message?: string }>("", {});
-        void encoded; void storageError;
-      }
-      if (selected.storage_path) await deleteStoredFile(selected.storage_path, request, projectId);
+      if (selected.storage_path) await remove(selected.storage_path);
       await request("project_files?id=eq." + selected.id, { method: "DELETE", headers: { Prefer: "return=minimal" } });
       setSelected(null); setContent(""); setOriginal("");
       await loadFiles(false);
