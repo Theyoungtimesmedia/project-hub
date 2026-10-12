@@ -1,7 +1,7 @@
 import {
   Activity, ArrowLeft, BarChart3, Check, CheckCircle2, ChevronDown, ChevronRight, Cloud, Code2, Copy,
   CreditCard, Database, Download, ExternalLink, File, FileText, Flame, Folder, Globe2, GitBranch, KeyRound, Lock,
-  MoreHorizontal, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Terminal,
+  MoreHorizontal, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Terminal, Trash2,
   Users, History as HistoryIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -30,7 +30,7 @@ function SurfaceTitle({ title, detail, onBack }: { title: string; detail?: strin
 
 function isEditableText(mimeType: string) { return mimeType.startsWith("text/") || /json|javascript|xml|svg/.test(mimeType); }
 
-type StoredProjectFile = { id: string; project_id: string; file_path: string; file_name: string; mime_type: string; size_bytes: number; storage_path: string | null; text_content: string | null; source: string; updated_at: string };
+async function deleteStoredFile(path: string, request: <T,>(path: string, init?: RequestInit) => Promise<T>, projectId: string) {\n  const storagePath = path;\n  const response = await fetch((import.meta.env.VITE_SUPABASE_URL as string).replace(/\\/$/, "") + "/storage/v1/object/project-files/" + storagePath.split("/").map(encodeURIComponent).join("/"), { method: "DELETE", headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string, Authorization: "Bearer " + (JSON.parse(sessionStorage.getItem("figurable.auth.session") ?? "{}").access_token ?? "") } });\n  if (!response.ok) throw new Error("Could not delete stored file.");\n  void request; void projectId;\n}\n\ntype StoredProjectFile = { id: string; project_id: string; file_path: string; file_name: string; mime_type: string; size_bytes: number; storage_path: string | null; text_content: string | null; source: string; updated_at: string };
 
 function CodeSurface({ projectId }: { projectId: string }) {
   const { request, download, upload } = useBackend();
@@ -42,6 +42,8 @@ function CodeSurface({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [zipBusy, setZipBusy] = useState(false);
+  const [newPath, setNewPath] = useState("");
+  const [creatingFile, setCreatingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function loadFiles(chooseFirst = false) {
@@ -61,7 +63,7 @@ function CodeSurface({ projectId }: { projectId: string }) {
     setError(null);
     try {
       let text = file.text_content;
-      if (text === null && file.storage_path) text = await (await download(file.storage_path)).text();
+      if (text === null && file.storage_path && isEditableText(file.mime_type)) text = await (await download(file.storage_path)).text();
       setContent(text ?? "");
       setOriginal(text ?? "");
     } catch (cause) {
@@ -85,6 +87,53 @@ function CodeSurface({ projectId }: { projectId: string }) {
       await loadFiles(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save file.");
+    } finally { setSaving(false); }
+  }
+
+  async function createFile() {
+    const path = newPath.trim().replaceAll("\\", "/").replace(/^\/+/, "");
+    if (!path || path.split("/").some(part => !part || part === "." || part === "..")) {
+      setError("Enter a valid relative project path, such as src/components/Header.tsx.");
+      return;
+    }
+    if (files.some(file => file.file_path === path)) {
+      setError("A file with that path already exists.");
+      return;
+    }
+    setCreatingFile(true); setError(null);
+    try {
+      const mime = path.endsWith(".html") ? "text/html" : path.endsWith(".css") ? "text/css" : path.endsWith(".json") ? "application/json" : /\.(js|jsx|ts|tsx|mjs)$/i.test(path) ? "text/javascript" : "text/plain";
+      const storagePath = projectId + "/" + path;
+      const empty = "";
+      await upload(storagePath, new File([empty], path.split("/").at(-1) ?? "new-file", { type: mime }));
+      await request("project_files?on_conflict=project_id,file_path", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ project_id: projectId, file_path: path, file_name: path.split("/").at(-1), mime_type: mime, size_bytes: 0, storage_path: storagePath, text_content: "", source: "generated", updated_at: new Date().toISOString() }),
+      });
+      setNewPath("");
+      await loadFiles(false);
+      const rows = await request<StoredProjectFile[]>("project_files?select=id,project_id,file_path,file_name,mime_type,size_bytes,storage_path,text_content,source,updated_at&project_id=eq." + projectId + "&file_path=eq." + encodeURIComponent(path));
+      if (rows[0]) await openFile(rows[0]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create file.");
+    } finally { setCreatingFile(false); }
+  }
+
+  async function deleteSelectedFile() {
+    if (!selected || !window.confirm("Delete " + selected.file_path + " from this project? This cannot be undone.")) return;
+    setSaving(true); setError(null);
+    try {
+      if (selected.storage_path) {
+        const encoded = selected.storage_path.split("/").map(encodeURIComponent).join("/");
+        const { error: storageError } = await request<{ message?: string }>("", {});
+        void encoded; void storageError;
+      }
+      if (selected.storage_path) await deleteStoredFile(selected.storage_path, request, projectId);
+      await request("project_files?id=eq." + selected.id, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      setSelected(null); setContent(""); setOriginal("");
+      await loadFiles(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete file.");
     } finally { setSaving(false); }
   }
 
@@ -132,7 +181,7 @@ function CodeSurface({ projectId }: { projectId: string }) {
   }
 
   const visible = files.filter(file => file.file_path.toLowerCase().includes(query.toLowerCase()));
-  return <div className="code-surface"><aside className="code-tree"><div className="code-search"><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project files"/><ChevronDown size={13}/></div><div className="tree-root"><ChevronDown size={13}/><Folder size={14}/><b>Project files</b></div>{loading && <p className="px-3 py-4 text-xs text-zinc-500">Loading files…</p>}{!loading && visible.length === 0 && <p className="px-3 py-4 text-xs text-zinc-500">No files uploaded or generated yet.</p>}{visible.map(file => <Button variant={selected?.id === file.id ? "editorActive" : "ghost"} size="sm" className="tree-file" key={file.id} onClick={() => void openFile(file)}><File size={13}/><span>{file.file_path}</span></Button>)}<Button variant="outline" size="sm" className="download-code" disabled={!selected} onClick={downloadCurrent}><Download size={13}/> Download file</Button><Button variant="outline" size="sm" className="download-code" disabled={zipBusy || files.length === 0} onClick={() => void downloadZip()}><Download size={13}/>{zipBusy ? "Preparing ZIP…" : "Download ZIP"}</Button></aside><main className="code-editor"><div className="code-editor-head"><span>{selected?.file_path ?? "No file selected"} <small>{selected?.mime_type ?? ""}</small></span><div><Button variant="ghost" size="icon-sm" title="Download file" disabled={!selected} onClick={downloadCurrent}><Download size={13}/></Button><Button variant="editorActive" size="sm" disabled={!selected || !isEditableText(selected.mime_type) || content === original || saving} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save file"}</Button></div></div>{error && <p role="alert" className="m-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{selected && isEditableText(selected.mime_type) ? <textarea aria-label={"Edit " + selected.file_path} spellCheck={false} value={content} onChange={event => setContent(event.target.value)} className="min-h-[65vh] w-full resize-none bg-white p-4 font-mono text-xs leading-6 text-zinc-800 outline-none" /> : selected ? <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">This is a binary file. Use Download file to retrieve the original bytes without corruption.</div> : <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">Select a file to inspect or edit its saved contents.</div>}<div className="read-only-note"><Lock size={12}/> {selected ? (content === original ? "Saved version" : "Unsaved changes") : "Private project storage"}</div></main></div>;
+  return <div className="code-surface"><aside className="code-tree"><div className="code-search"><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project files"/><ChevronDown size={13}/></div><div className="tree-root"><ChevronDown size={13}/><Folder size={14}/><b>Project files</b></div><div className="flex gap-1 px-2 py-2"><input aria-label="New file path" value={newPath} onChange={event => setNewPath(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void createFile(); }} placeholder="src/new-file.tsx" className="min-w-0 flex-1 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] outline-none focus:border-blue-500"/><Button variant="outline" size="icon-sm" disabled={creatingFile || !newPath.trim()} onClick={() => void createFile()} aria-label="Create file" title="Create file"><Plus size={13}/></Button></div>{loading && <p className="px-3 py-4 text-xs text-zinc-500">Loading files…</p>}{!loading && visible.length === 0 && <p className="px-3 py-4 text-xs text-zinc-500">No files uploaded or generated yet.</p>}{visible.map(file => <Button variant={selected?.id === file.id ? "editorActive" : "ghost"} size="sm" className="tree-file" key={file.id} onClick={() => void openFile(file)}><File size={13}/><span>{file.file_path}</span></Button>)}<Button variant="outline" size="sm" className="download-code" disabled={!selected} onClick={downloadCurrent}><Download size={13}/> Download file</Button><Button variant="outline" size="sm" className="download-code" disabled={zipBusy || files.length === 0} onClick={() => void downloadZip()}><Download size={13}/>{zipBusy ? "Preparing ZIP…" : "Download ZIP"}</Button></aside><main className="code-editor"><div className="code-editor-head"><span>{selected?.file_path ?? "No file selected"} <small>{selected?.mime_type ?? ""}</small></span><div><Button variant="ghost" size="icon-sm" title="Download file" disabled={!selected} onClick={downloadCurrent}><Download size={13}/></Button><Button variant="outline" size="sm" disabled={!selected || saving} onClick={() => void deleteSelectedFile()}><Trash2 size={13}/> Delete</Button><Button variant="editorActive" size="sm" disabled={!selected || !isEditableText(selected.mime_type) || content === original || saving} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save file"}</Button></div></div>{error && <p role="alert" className="m-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{selected && isEditableText(selected.mime_type) ? <textarea aria-label={"Edit " + selected.file_path} spellCheck={false} value={content} onChange={event => setContent(event.target.value)} className="min-h-[65vh] w-full resize-none bg-white p-4 font-mono text-xs leading-6 text-zinc-800 outline-none" /> : selected ? <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">This is a binary file. Use Download file to retrieve the original bytes without corruption.</div> : <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">Select a file to inspect or edit its saved contents.</div>}<div className="read-only-note"><Lock size={12}/> {selected ? (content === original ? "Saved version" : "Unsaved changes") : "Private project storage"}</div></main></div>;
 }
 
 function FilesSurface({ projectId }: { projectId: string }) {
