@@ -6,11 +6,12 @@ import {
   List, Menu, Mic, MoreHorizontal, Paperclip, PlugZap, Search, Settings, Share2,
   Star, User, Users, X, Zap,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ambient from "@/assets/ambient-studio.jpg";
 import { Button } from "@/components/ui/button";
 import { ProjectPreview } from "./project-preview";
-import { projects as seedProjects, type Project } from "@/lib/mock-data";
+import type { Project } from "@/lib/mock-data";
+import { useBackend } from "@/lib/backend";
 
 type Filter = "all" | "starred" | "mine" | "shared";
 
@@ -20,6 +21,10 @@ const nav = [
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const { session, request, signOut } = useBackend();
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadingProjects, setLoadingProjects] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
@@ -27,7 +32,7 @@ export function Dashboard() {
   const [query, setQuery] = useState("");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<"Build" | "Plan">("Build");
-  const [items, setItems] = useState(seedProjects);
+  const [items, setItems] = useState<Project[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -39,12 +44,67 @@ export function Dashboard() {
     return matches;
   }), [filter, items, query]);
 
-  const createProject = () => {
-    if (!prompt.trim()) return;
-    navigate({ to: "/project/$projectId", params: { projectId: "new-project" }, search: { prompt } });
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProjects() {
+      setLoadingProjects(true);
+      setLoadError(null);
+      try {
+        const workspaces = await request<Array<{ id: string; name: string }>>("workspaces?select=id,name&order=created_at.asc&limit=1");
+        const workspace = workspaces[0];
+        if (!workspace) throw new Error("Your account has no workspace. Sign out and sign in again, or check the workspace bootstrap trigger in Supabase.");
+        const rows = await request<Array<{ id: string; name: string; description: string | null; is_starred: boolean; is_published: boolean; created_by: string; updated_at: string }>>(
+          `projects?select=id,name,description,is_starred,is_published,created_by,updated_at&workspace_id=eq.${workspace.id}&order=updated_at.desc`
+        );
+        if (cancelled) return;
+        setWorkspaceId(workspace.id);
+        setItems(rows.map((row, index) => ({
+          id: row.id, name: row.name, description: row.description ?? "",
+          updated: new Date(row.updated_at).toLocaleString(), starred: row.is_starred,
+          shared: row.created_by !== session?.user.id, live: row.is_published,
+          tone: (["blue", "mint", "coral", "violet"] as const)[index % 4],
+        })));
+      } catch (error) {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : "Could not load projects.");
+      } finally {
+        if (!cancelled) setLoadingProjects(false);
+      }
+    }
+    void loadProjects();
+    return () => { cancelled = true; };
+  }, [request, session?.user.id]);
+
+  const createProject = async () => {
+    if (!prompt.trim() || !workspaceId || !session) return;
+    const rawName = prompt.trim().split(/[.!?\n]/)[0]?.trim() || "Untitled project";
+    const name = rawName.split(/\s+/).slice(0, 6).join(" ").replace(/^./, char => char.toUpperCase()).slice(0, 72);
+    const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+    setLoadError(null);
+    try {
+      const rows = await request<Array<{ id: string }>>("projects?select=id", {
+        method: "POST", headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ workspace_id: workspaceId, name, slug: `${slugBase}-${crypto.randomUUID().slice(0, 8)}`, description: prompt.trim(), created_by: session.user.id }),
+      });
+      const created = rows[0];
+      if (!created) throw new Error("Supabase did not return the new project.");
+      navigate({ to: "/project/$projectId", params: { projectId: created.id }, search: { prompt: prompt.trim() } });
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Project creation failed.");
+    }
   };
 
-  const toggleStar = (id: string) => setItems((current) => current.map((item) => item.id === id ? { ...item, starred: !item.starred } : item));
+  const toggleStar = async (id: string) => {
+    const project = items.find(item => item.id === id);
+    if (!project) return;
+    const starred = !project.starred;
+    setItems(current => current.map(item => item.id === id ? { ...item, starred } : item));
+    try {
+      await request(`projects?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ is_starred: starred, updated_at: new Date().toISOString() }) });
+    } catch (error) {
+      setItems(current => current.map(item => item.id === id ? { ...item, starred: project.starred } : item));
+      setLoadError(error instanceof Error ? error.message : "Could not update project.");
+    }
+  };
 
   return (
     <div className="dashboard-shell">
@@ -75,7 +135,7 @@ export function Dashboard() {
         </nav>
         <div className="sidebar-footer">
           {!collapsed && <div className="credit-card"><div><Zap size={14}/><b>Workspace status</b><span>Private frontend prototype</span></div><Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>Import project</Button></div>}
-          <div className="profile-row"><span className="profile-avatar">J</span>{!collapsed && <><span className="profile-copy"><b>Joshua Omoniyi</b><small>Personal workspace</small></span><Button variant="ghost" size="icon"><MoreHorizontal size={15}/></Button></>}</div>
+          <div className="profile-row"><span className="profile-avatar">J</span>{!collapsed && <><span className="profile-copy"><b>{String(session?.user.user_metadata?.name ?? "Joshua Omoniyi")}</b><small>{session?.user.email}</small></span><Button variant="ghost" size="icon" aria-label="Sign out" title="Sign out" onClick={() => void signOut()}><MoreHorizontal size={15}/></Button></>}</div>
         </div>
       </aside>
 
@@ -95,13 +155,14 @@ export function Dashboard() {
         </section>
 
         <section className="projects-section">
+          {loadError && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{loadError}</div>}
           <header className="projects-heading"><div><p>YOUR WORK</p><h2>Projects</h2></div><span>{filtered.length} projects</span></header>
           <div className="gallery-toolbar">
             <div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All projects</button><button className={filter === "mine" ? "active" : ""} onClick={() => setFilter("mine")}>Created by me</button><button className={filter === "shared" ? "active" : ""} onClick={() => setFilter("shared")}>Shared with me</button></div>
             <div className="toolbar-actions"><label className="search-field"><Search size={14}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter projects"/></label><select aria-label="Sort projects"><option>Last modified</option><option>Alphabetical</option><option>Created date</option></select><Button variant="outline" size="sm" onClick={() => setImportOpen(true)}><Import size={14}/> Import</Button><div className="view-toggle"><button className={view === "grid" ? "active" : ""} onClick={() => setView("grid")} aria-label="Grid view"><Grid2X2 size={15}/></button><button className={view === "list" ? "active" : ""} onClick={() => setView("list")} aria-label="List view"><List size={15}/></button></div></div>
           </div>
           <div className={`project-gallery ${view}`}>
-            {filtered.map((project) => <ProjectCard key={project.id} project={project} list={view === "list"} onStar={() => toggleStar(project.id)}/>) }
+            {loadingProjects ? <p className="col-span-full py-12 text-center text-sm text-zinc-500">Loading projects from Supabase…</p> : filtered.length ? filtered.map((project) => <ProjectCard key={project.id} project={project} list={view === "list"} onStar={() => void toggleStar(project.id)}/>) : <div className="col-span-full rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-12 text-center"><h3 className="font-semibold text-zinc-900">No projects yet</h3><p className="mt-2 text-sm text-zinc-500">Describe a project above to create the first one in your workspace.</p></div>}
           </div>
         </section>
       </main>
