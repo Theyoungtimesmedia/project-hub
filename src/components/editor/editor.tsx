@@ -32,6 +32,9 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const [projectName, setProjectName] = useState("Loading project…");
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ file_path: string; file_name: string; size_bytes: number }>>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [chatWidth, setChatWidth] = useState(380);
   const [resizing, setResizing] = useState(false);
@@ -146,11 +149,49 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     updatePlan({ ...plan, status: "discarded" });
     setPlanPreview(false);
   };
+  const attachFiles = async (selected: FileList | null) => {
+    if (!selected?.length || uploadingFiles) return;
+    setUploadingFiles(true);
+    setProjectError(null);
+    const uploaded: Array<{ file_path: string; file_name: string; size_bytes: number }> = [];
+    try {
+      for (const file of Array.from(selected)) {
+        if (file.size > 50 * 1024 * 1024) throw new Error(file.name + " exceeds the 50 MB file limit.");
+        const safeName = file.name.replace(/[\\/\0]+/g, "-").replace(/\.\.+/g, "-").slice(0, 180) || "attachment";
+        const path = projectId + "/uploads/" + Date.now() + "-" + safeName;
+        await upload(path, file);
+        const textLike = file.size <= 100000 && (file.type.startsWith("text/") || /json|javascript|xml|svg/.test(file.type) || /\.(md|txt|ts|tsx|js|jsx|css|html|sql|yaml|yml|toml|env)$/i.test(file.name));
+        const textContent = textLike ? await file.text() : null;
+        const filePath = "uploads/" + path.split("/").at(-1);
+        await request("project_files?on_conflict=project_id,file_path", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({
+            project_id: projectId, file_path: filePath, file_name: file.name,
+            mime_type: file.type || "application/octet-stream", size_bytes: file.size,
+            storage_path: path, text_content: textContent, source: "upload",
+            uploaded_by: session?.user.id, updated_at: new Date().toISOString(),
+          }),
+        });
+        uploaded.push({ file_path: filePath, file_name: file.name, size_bytes: file.size });
+      }
+      setAttachedFiles(current => [...current, ...uploaded]);
+      setSelectedContext(current => [current, ...uploaded.map(file => "Attached project file: " + file.file_path)].filter(Boolean).join("\n"));
+    } catch (cause) {
+      setProjectError(cause instanceof Error ? cause.message : "Could not attach files.");
+    } finally {
+      setUploadingFiles(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+  };
+
   const submit = () => {
     if (!draft.trim() || building) return;
     const text = draft.trim();
+    const attachmentContext = attachedFiles.length ? "\n\nUse these attached project files where relevant: " + attachedFiles.map(file => file.file_path).join(", ") : "";
     setDraft("");
-    void runAgent(text, mode);
+    setAttachedFiles([]);
+    void runAgent(text + attachmentContext, mode);
   };
 
   const updateEnabledSkills = (items: string[]) => {
@@ -271,9 +312,12 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
         <div className="chat-composer-wrap">
           {slashQuery !== null && filteredSkills.length > 0 && <div className="skills-menu"><p>Skills</p>{filteredSkills.map((skill, index) => <button className={index === skillIndex ? "skill-highlight" : ""} key={skill.command} onClick={() => { setDraft(draft.replace(/\/\S*$/, `${skill.command} `)); inputRef.current?.focus(); }}><span>{skill.command}</span><div><b>{skill.title}</b><small>{skill.detail}</small></div></button>)}</div>}
           <div className="chat-composer">
+            <input ref={attachmentInputRef} className="sr-only" type="file" multiple onChange={event => { void attachFiles(event.target.files); }} />
+            {attachedFiles.length > 0 && <div className="composer-context"><span>{attachedFiles.length} file(s) attached: {attachedFiles.map(file => file.file_name).join(", ")}</span><Button variant="ghost" size="icon-sm" aria-label="Clear attached files" onClick={() => setAttachedFiles([])}><X size={12}/></Button></div>}
+            {uploadingFiles && <div className="composer-context"><span>Uploading files to private project storage…</span></div>}
             <textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); setSkillIndex(0); }} onKeyDown={(event) => { if (slashQuery !== null && filteredSkills.length) { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSkillIndex(current => (current + (event.key === "ArrowDown" ? 1 : -1) + filteredSkills.length) % filteredSkills.length); return; } if (event.key === "Enter") { event.preventDefault(); const skill = filteredSkills[skillIndex]; if (skill) setDraft(draft.replace(/\/\S*$/, `${skill.command} `)); return; } if (event.key === "Escape") { setDraft(draft.replace(/\/\S*$/, "")); return; } } if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="Describe a change or ask a question..." rows={3}/>
             <div className="chat-actions">
-              <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="outline" size="icon-sm" className="composer-plus" aria-label="Add context"><Plus size={16}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="editor-menu chat-actions-menu" align="start" side="top"><DropdownMenu.Label>Prompt actions</DropdownMenu.Label><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSurface("settings")}><Settings size={13}/> Project settings</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item"><BookOpen size={13}/> Project knowledge</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item"><GitBranch size={13}/> GitHub sync</DropdownMenu.Item><DropdownMenu.Separator/><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSelectedContext("Screenshot attached") }><ImagePlus size={13}/> Take a screenshot</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSelectedContext("@ Code · @ Files · @ Connectors") }><MousePointer2 size={13}/> Add reference <span>@</span></DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item" onSelect={() => setPromptHelperOpen(true)}><WandSparkles size={13}/> Improve this prompt</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item"><Paperclip size={13}/> Attach files</DropdownMenu.Item><DropdownMenu.Separator/><DropdownMenu.Item className="editor-menu-item"><MessageCircle size={13}/> Help center <ExternalLink size={12}/></DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+              <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="outline" size="icon-sm" className="composer-plus" aria-label="Add context"><Plus size={16}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="editor-menu chat-actions-menu" align="start" side="top"><DropdownMenu.Label>Prompt actions</DropdownMenu.Label><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSurface("settings")}><Settings size={13}/> Project settings</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item"><BookOpen size={13}/> Project knowledge</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item"><GitBranch size={13}/> GitHub sync</DropdownMenu.Item><DropdownMenu.Separator/><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSelectedContext("Screenshot attached") }><ImagePlus size={13}/> Take a screenshot</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item" onSelect={() => setSelectedContext("@ Code · @ Files · @ Connectors") }><MousePointer2 size={13}/> Add reference <span>@</span></DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item" onSelect={() => setPromptHelperOpen(true)}><WandSparkles size={13}/> Improve this prompt</DropdownMenu.Item><DropdownMenu.Item className="editor-menu-item" onSelect={() => attachmentInputRef.current?.click()}><Paperclip size={13}/> Attach files</DropdownMenu.Item><DropdownMenu.Separator/><DropdownMenu.Item className="editor-menu-item"><MessageCircle size={13}/> Help center <ExternalLink size={12}/></DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
               <div className="composer-right">
                 <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="ghost" size="sm">{mode}<ChevronDown size={11}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="editor-menu mode-menu" align="end" side="top">{(["Build","Chat","Plan"] as Mode[]).map((item) => <DropdownMenu.Item className="mode-option" key={item} onSelect={() => { setMode(item); if (item === "Plan") { setPlanPreview(true); setSurface("preview"); } }}><span><b>{item}</b><small>{item === "Build" ? "Make changes directly" : item === "Chat" ? "Ask anything, explore ideas" : "Detailed spec for complex builds"}</small></span>{mode === item && <Check size={14}/>}</DropdownMenu.Item>)}</DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
                 <Button variant="ghost" size="icon-sm" aria-label="Use microphone"><Mic size={15}/></Button>
