@@ -53,12 +53,12 @@ export function Dashboard() {
       <aside className={`dashboard-sidebar ${collapsed ? "is-collapsed" : ""} ${mobileOpen ? "is-mobile-open" : ""}`}>
         <div className="brand-row">
           <div className="brand-mark"><span/><span/><span/></div>
-          {!collapsed && <span className="brand-name">Lovable</span>}
+          {!collapsed && <span className="brand-name">Figurable</span>}
           <Button variant="ghost" size="icon" className="sidebar-toggle" aria-label="Collapse sidebar" onClick={() => { setCollapsed(!collapsed); setMobileOpen(false); }}><ChevronsLeft size={15}/></Button>
         </div>
         <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild><Button variant="outline" className="workspace-switcher"><span className="workspace-avatar">NH</span>{!collapsed && <><span className="truncate">Nathan's workspace</span><ChevronDown size={13}/></>}</Button></DropdownMenu.Trigger>
-          <DropdownMenu.Portal><DropdownMenu.Content className="menu-content" sideOffset={6}><DropdownMenu.Label className="menu-label">WORKSPACES</DropdownMenu.Label><DropdownMenu.Item className="menu-item">Nathan's workspace <span>✓</span></DropdownMenu.Item><DropdownMenu.Item className="menu-item">Studio workspace</DropdownMenu.Item><DropdownMenu.Separator className="menu-separator"/><DropdownMenu.Item className="menu-item">Create workspace</DropdownMenu.Item><DropdownMenu.Item className="menu-item"><Settings size={14}/> Workspace settings</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal>
+          <DropdownMenu.Trigger asChild><Button variant="outline" className="workspace-switcher"><span className="workspace-avatar">JO</span>{!collapsed && <><span className="truncate">Joshua's workspace</span><ChevronDown size={13}/></>}</Button></DropdownMenu.Trigger>
+          <DropdownMenu.Portal><DropdownMenu.Content className="menu-content" sideOffset={6}><DropdownMenu.Label className="menu-label">WORKSPACES</DropdownMenu.Label><DropdownMenu.Item className="menu-item">Joshua's workspace <span>✓</span></DropdownMenu.Item><DropdownMenu.Item className="menu-item">Build workspace</DropdownMenu.Item><DropdownMenu.Separator className="menu-separator"/><DropdownMenu.Item className="menu-item">Create workspace</DropdownMenu.Item><DropdownMenu.Item className="menu-item"><Settings size={14}/> Workspace settings</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal>
         </DropdownMenu.Root>
         <nav className="sidebar-scroll">
           <div className="nav-block">
@@ -74,8 +74,8 @@ export function Dashboard() {
           {!collapsed && <><div className="nav-label">Recents</div><div className="recent-list">{items.slice(0,5).map((project) => <Link key={project.id} to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><i className={`tone-${project.tone}`}/><span>{project.name}</span></Link>)}</div></>}
         </nav>
         <div className="sidebar-footer">
-          {!collapsed && <div className="credit-card"><div><Zap size={14}/><b>Daily credits</b><span>5 of 5 remaining</span></div><div className="progress"><span/></div><Button variant="outline" size="sm">Upgrade</Button></div>}
-          <div className="profile-row"><span className="profile-avatar">N</span>{!collapsed && <><span className="profile-copy"><b>Nathan Hanry</b><small>Personal plan</small></span><Button variant="ghost" size="icon"><MoreHorizontal size={15}/></Button></>}</div>
+          {!collapsed && <div className="credit-card"><div><Zap size={14}/><b>Workspace status</b><span>Private frontend prototype</span></div><Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>Import project</Button></div>}
+          <div className="profile-row"><span className="profile-avatar">J</span>{!collapsed && <><span className="profile-copy"><b>Joshua Omoniyi</b><small>Personal workspace</small></span><Button variant="ghost" size="icon"><MoreHorizontal size={15}/></Button></>}</div>
         </div>
       </aside>
 
@@ -84,7 +84,7 @@ export function Dashboard() {
           <p className="eyebrow"><span/> Your workspace is ready</p>
           <h1>What do you want to build?</h1>
           <div className="hero-composer">
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createProject(); } }} placeholder="Ask Lovable to build anything..." aria-label="Project prompt"/>
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createProject(); } }} placeholder="Describe what you want to build..." aria-label="Project prompt"/>
             <div className="composer-bar">
               <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="ghost" size="icon" aria-label="Attach"><Paperclip size={17}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content"><DropdownMenu.Item className="menu-item">Image or mockup</DropdownMenu.Item><DropdownMenu.Item className="menu-item">CSV or data</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Use a template</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Add a connector</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
               <div className="mode-switch"><button className={mode === "Build" ? "active" : ""} onClick={() => setMode("Build")}>Build</button><button className={mode === "Plan" ? "active" : ""} onClick={() => setMode("Plan")}>Plan</button></div>
