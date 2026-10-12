@@ -1,7 +1,7 @@
 -- Restrict exposed SECURITY DEFINER functions to the roles that actually need them.
 -- Access helpers remain callable by authenticated users because project/workspace RLS policies use them.
 revoke all on function public.bootstrap_figurable_workspace() from public, anon;
-grant execute on function public.bootstrap_figurable_workspace() to authenticated, service_role;
+grant execute on function public.bootstrap_figurable_workspace() to service_role;
 
 revoke all on function public.can_access_project(uuid) from public, anon;
 grant execute on function public.can_access_project(uuid) to authenticated, service_role;
