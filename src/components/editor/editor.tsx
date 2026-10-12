@@ -25,7 +25,7 @@ type PreviewTool = "select" | "text" | "draw" | "comment";
 const pages = [
   { name: "Preview", path: "/", title: "Project preview", description: "The latest generated project output." },
 ];
-const defaultPage = pages[0] ?? { name: "Homepage", path: "/", title: "Orbit — Money made clear", description: "A calm place for spending, saving, and everything ahead." };
+const defaultPage = pages[0]!;
 
 export function Editor({ projectId, initialPrompt }: { projectId: string; initialPrompt?: string }) {
   const { session, request, invoke, upload } = useBackend();
