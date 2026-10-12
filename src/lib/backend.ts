@@ -4,7 +4,8 @@ const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "https://unhwyywmnkws
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuaHd5eXdtbmt3c2ppaXVzYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MzQ3MzMsImV4cCI6MjEwNzQxMDczM30.QXn4jIfsfVP7pg-hwyFAN4KkoF5-a-sBDV-tbjdqUks";
 const SESSION_KEY = "sb-unhwyywmnkwsjiiusauo-auth-token";
 
-type BackendUser = { id: string; email?: string; user_metadata?: Record<string, unknown> };
+type BackendUser = { id: string; email?: string; user_metadata?: { name?: string; full_name?: string; [key: string]: unknown } };
+type AuthResponse = { access_token?: unknown; refresh_token?: unknown; expires_at?: unknown; expires_in?: unknown; token_type?: unknown; user?: unknown; [key: string]: unknown };
 type Session = { access_token: string; refresh_token: string; expires_at?: number; expires_in?: number; token_type?: string; user: BackendUser };
 type BackendContextValue = {
   session: Session | null;
@@ -78,7 +79,7 @@ export function BackendProvider({ children }: { children: ReactNode }) {
       headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    const payload = parseResponse(await response.text()) as Record<string, unknown> | null;
+    const payload = parseResponse(await response.text()) as AuthResponse | null;
     if (!response.ok || !payload || typeof payload.access_token !== "string" || typeof payload.refresh_token !== "string" || !payload.user) {
       throw new Error(messageOf(payload, "Your session expired. Sign in again."));
     }
@@ -101,7 +102,8 @@ export function BackendProvider({ children }: { children: ReactNode }) {
       const next = await refreshSession(current.refresh_token);
       saveSession(next);
       return next;
-    } catch {
+    } catch (cause) {
+      if (cause instanceof TypeError) return current;
       saveSession(null);
       return null;
     }
@@ -117,8 +119,9 @@ export function BackendProvider({ children }: { children: ReactNode }) {
           try {
             const fresh = await refreshSession(saved.refresh_token);
             if (active) saveSession(fresh);
-          } catch {
-            if (active) saveSession(null);
+          } catch (cause) {
+            if (active && cause instanceof TypeError) setSession(saved);
+            else if (active) saveSession(null);
           }
         } else if (active) {
           setSession(saved);
@@ -196,7 +199,7 @@ export function BackendProvider({ children }: { children: ReactNode }) {
       saveSession(current);
       headers.set("Authorization", "Bearer " + current.access_token);
       return await fetch(url, { ...init, headers });
-    } catch { saveSession(null); return response; }
+    } catch (cause) { if (!(cause instanceof TypeError)) saveSession(null); return response; }
   }, [getValidSession, refreshSession, saveSession]);
 
   const request = useCallback(async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
