@@ -99,7 +99,12 @@ Deno.serve(async (req) => {
   if (mode === "Plan") {
     userPrompt += "\n\nReturn only valid JSON with keys: summary (string), plan (string markdown), steps (array of {title:string, detail:string}), files (array of {path:string, action:'create'|'modify'|'delete'}). Do not change files in Plan mode.";
   } else if (mode === "Build") {
-    userPrompt += "\n\nImplement the requested website change as a self-contained static web project. Return only valid JSON with keys: summary (string), files (array of {path:string, content:string}). Include a complete index.html that contains the complete working interface and its CSS/JavaScript inline so the preview can run without a build server. Additional files may be included when useful. Do not use remote assets unless necessary; do not claim tests ran. Never include credentials. Return only files you intend to write.";
+    const hasPackageJson = (projectFiles ?? []).some(file => file.file_path === "package.json");
+    const hasApplicationSource = (projectFiles ?? []).some(file => /^(src|app|pages)\/.*\.(tsx|jsx|ts|js)$/.test(file.file_path));
+    const hasExistingCodebase = hasPackageJson && hasApplicationSource;
+    userPrompt += hasExistingCodebase
+      ? "\n\nModify this existing application, preserving its framework, dependencies, architecture, route structure, and design system. Return only valid JSON with keys: summary (string), files (array of {path:string, content:string}) containing complete replacement contents for each changed or newly created file, and preview_html (optional self-contained HTML string for the visual preview only). Do not replace the project with a static HTML site. Do not include unchanged files. Use the supplied file contents as the source of truth; if a necessary file is not in context, avoid guessing its contents and instead report the missing context in the summary. Do not claim tests ran. Never include credentials."
+      : "\n\nBuild the requested project as a working self-contained web app. Return only valid JSON with keys: summary (string), files (array of {path:string, content:string}), and preview_html (optional self-contained HTML string for the visual preview). For a new static site, include a complete index.html with the required CSS and JavaScript. For an existing framework project, preserve its framework and edit its actual source files instead of replacing it with static HTML. Do not use remote assets unless necessary; do not claim tests ran. Never include credentials. Return only files you intend to write.";
   } else {
     userPrompt += "\n\nAnswer in Chat mode. Do not propose that files changed. If the user asks to build or edit, explain that they should switch to Build mode.";
   }
@@ -215,7 +220,12 @@ Deno.serve(async (req) => {
         if (snapshotError) continue;
         snapshotManifest[savedFile.file_path] = { storage_path: savedFile.storage_path, snapshot_path: snapshotPath, mime_type: savedFile.mime_type, size_bytes: savedFile.size_bytes };
       }
+      if (typeof parsed.preview_html === "string" && parsed.preview_html.trim().length > 0) {
+        if (parsed.preview_html.length > 700000) throw new Error("The generated preview exceeds the 700 KB limit.");
+        previewHtml = parsed.preview_html;
+      }
       summary = String(parsed.summary);
+      if (!previewHtml) summary += " Source files are saved. This project has no self-contained preview HTML; use the connected framework deployment to preview it.";
       if (githubSync.enabled && githubSync.success) summary += " Changes pushed to GitHub.";
       if (githubSync.enabled && !githubSync.success) summary += " Files are saved in Figurable storage, but GitHub push failed: " + String(githubSync.error);
       resultPayload = { answer, files: manifest, preview_html: previewHtml, github_sync: githubSync };
