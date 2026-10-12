@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { Activity, Check, ChevronDown, ChevronRight, Clock3, Code2, Copy, Eye, EyeOff, FileCode2, FileText, KeyRound, ListChecks, LockKeyhole, MessageCircle, ShieldCheck, Terminal, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useBackend } from '@/lib/backend';
 import { Button } from '@/components/ui/button';
 
 export type PlanState = { title: string; text: string; steps: boolean[]; stepDetails?: Array<{ title: string; detail: string; path?: string; action?: string }>; files?: Array<{ path: string; action: string }>; status: 'review' | 'approved' | 'discarded' };
@@ -24,27 +25,51 @@ export function ChoiceCard({ onAnswer }: { onAnswer: (answer: string) => void })
   const [choice, setChoice] = useState<string | null>(null);
   return <section className="choice-card"><div className="context-card-title"><MessageCircle size={17}/><div><b>How should authentication work?</b><small>Choose an option for this prototype</small></div></div><div className="choice-options">{['Email + Password', 'Magic Link', 'Google OAuth'].map(item => <Button key={item} variant={choice === item ? 'editorActive' : 'outline'} size="sm" disabled={choice !== null} onClick={() => { setChoice(item); onAnswer(item); }}>{choice === item && <Check size={12}/>} {item}</Button>)}</div>{choice && <p role="status">Answered: <b>{choice}</b></p>}</section>;
 }
-export type TurnDetails = { text: string; summary: string; id: number };
+export type TurnDetails = { text: string; summary: string; id: number; dbId?: string; status?: string; previewHtml?: string | null };
+type StoredTurnEvent = { id: string; kind: string; label: string; detail: string | null; payload: Record<string, unknown>; diff_patch: string | null; duration_ms: number | null; created_at: string };
+type StoredTurn = { status: string; error_message: string | null; provider: string | null; model: string | null; input_tokens: number | null; output_tokens: number | null; started_at: string | null; completed_at: string | null; result_payload: Record<string, unknown> | null };
+
 export function BuildDetailsDrawer({ turn, onClose, onPreview }: { turn: TurnDetails; onClose: () => void; onPreview: () => void }) {
-  const [tab, setTab] = useState<'Timeline' | 'Changes' | 'Output'>('Timeline');
-  const [file, setFile] = useState('editor.tsx'); const [layout, setLayout] = useState('Unified'); const [copied, setCopied] = useState(false);
-  const entries = [
-    { kind: 'thought', label: 'Thought for 23s' },
-    { kind: 'edit', label: 'Edited', detail: '3 files' },
-    { kind: 'thought', label: 'Thought for 4s' },
-    { kind: 'command', label: turn.text },
-    { kind: 'read', label: 'Read', detail: 'editor.tsx' },
-    { kind: 'read', label: 'Read', detail: 'styles.css' },
-    { kind: 'thought', label: 'Thought for 10s' },
-    { kind: 'edit', label: 'Edited', detail: '2 files' },
-    { kind: 'command', label: turn.summary },
-  ];
-  return <section className="details-canvas" aria-label={`Details for turn ${turn.id}`}>
-    <header className="details-toolbar"><Button variant="outline" size="sm" onClick={onClose}><X size={14}/> Back to latest</Button><div className="details-metrics"><span><Clock3 size={13}/> 8m 56s</span><span><Activity size={13}/> 12.3</span></div><h2>Details</h2><div className="details-tabs">{(['Timeline', 'Changes', 'Output'] as const).map(item => <Button key={item} variant={tab === item ? 'editorActive' : 'ghost'} size="sm" onClick={() => setTab(item)}>{item === 'Timeline' ? <Clock3 size={13}/> : item === 'Changes' ? <Code2 size={13}/> : <Terminal size={13}/>} {item}</Button>)}</div></header>
-    <div className="details-content">{tab === 'Timeline' && <div className="timeline-list">{entries.map((entry, index) => <details className={`timeline-entry timeline-${entry.kind}`} key={`${entry.kind}-${index}`} open={entry.kind === 'edit' && index === 1}><summary><span className="timeline-icon">{entry.kind === 'thought' ? <Clock3 size={14}/> : entry.kind === 'edit' ? <FileCode2 size={14}/> : entry.kind === 'read' ? <FileText size={14}/> : <Terminal size={14}/>}</span><span className="timeline-label">{entry.kind === 'thought' ? entry.label : <>{entry.label} {entry.detail && <em>{entry.detail}</em>}</>}</span><ChevronDown size={14} className="timeline-chevron"/></summary>{entry.kind === 'edit' ? <div className="timeline-expanded"><button onClick={() => { setTab('Changes'); setFile('editor.tsx'); }}><FileCode2 size={13}/> src/components/editor/editor.tsx <ChevronRight size={13}/></button><button onClick={() => { setTab('Changes'); setFile('styles.css'); }}><FileCode2 size={13}/> src/styles.css <ChevronRight size={13}/></button></div> : entry.kind === 'command' ? <div className="timeline-expanded">{entry.label}</div> : null}</details>)}</div>}{tab === 'Changes' && <div className="details-change-view"><p>{turn.summary}</p><div className="diff-controls"><select aria-label="Changed file" value={file} onChange={e => setFile(e.target.value)}><option>editor.tsx</option><option>styles.css</option></select><select aria-label="Diff layout" value={layout} onChange={e => setLayout(e.target.value)}><option>Unified</option><option>Side by side</option></select></div><div className={`diff-view ${layout === 'Side by side' ? 'diff-split' : ''}`}><header><FileCode2 size={13}/>{file} · simulated diff</header><code><span className="removed">− const panel = "static";</span><span className="added">+ const [panel, setPanel] = useState("preview");</span><span className="added">+ const showDetails = () =&gt; setPanel("details");</span></code></div><Button variant="outline" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(`${turn.text}\n${turn.summary}`); setCopied(true); } catch { setCopied(false); } }}><Copy size={13}/>{copied ? 'Copied' : 'Copy changes'}</Button></div>}{tab === 'Output' && <pre className="terminal-output">{`[Frontend simulation — no commands executed]\n✓ Simulated checks passed\n✓ Preview state updated\n\n${turn.summary}`}</pre>}</div>
-    <footer className="details-footer"><span>Local preview · Simulated activity</span><Button variant="outline" size="sm" onClick={onPreview}><Eye size={13}/> Preview this version</Button></footer>
+  const { request } = useBackend();
+  const [tab, setTab] = useState<"Timeline" | "Changes" | "Output">("Timeline");
+  const [events, setEvents] = useState<StoredTurnEvent[]>([]);
+  const [storedTurn, setStoredTurn] = useState<StoredTurn | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!turn.dbId) { setLoading(false); setError("This execution has not been saved yet."); return; }
+      setLoading(true); setError(null);
+      try {
+        const [eventRows, turnRows] = await Promise.all([
+          request<StoredTurnEvent[]>("turn_events?select=id,kind,label,detail,payload,diff_patch,duration_ms,created_at&turn_id=eq." + turn.dbId + "&order=created_at.asc"),
+          request<StoredTurn[]>("chat_turns?select=status,error_message,provider,model,input_tokens,output_tokens,started_at,completed_at,result_payload&id=eq." + turn.dbId),
+        ]);
+        if (cancelled) return;
+        setEvents(eventRows);
+        setStoredTurn(turnRows[0] ?? null);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load execution details.");
+      } finally { if (!cancelled) setLoading(false); }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [turn.dbId, request]);
+
+  const changedFiles = events.filter(event => event.kind === "edit" || event.payload?.path).map(event => ({
+    path: typeof event.payload?.path === "string" ? event.payload.path : event.label,
+    detail: event.detail,
+    payload: event.payload,
+  }));
+  const output = storedTurn?.result_payload;
+  return <section className="details-canvas" aria-label={"Details for turn " + turn.id}>
+    <header className="details-toolbar"><Button variant="outline" size="sm" onClick={onClose}><X size={14}/> Back to latest</Button><div className="details-metrics"><span><Clock3 size={13}/>{storedTurn?.started_at ? new Date(storedTurn.started_at).toLocaleTimeString() : "Start time unavailable"}</span><span><Activity size={13}/>{storedTurn?.provider ? storedTurn.provider + (storedTurn.model ? " · " + storedTurn.model : "") : "Provider not recorded"}</span></div><h2>Execution details</h2><div className="details-tabs">{(["Timeline", "Changes", "Output"] as const).map(item => <Button key={item} variant={tab === item ? "editorActive" : "ghost"} size="sm" onClick={() => setTab(item)}>{item === "Timeline" ? <Clock3 size={13}/> : item === "Changes" ? <Code2 size={13}/> : <Terminal size={13}/>} {item}</Button>)}</div></header>
+    <div className="details-content">{loading ? <p className="p-6 text-sm text-zinc-500">Loading saved execution events…</p> : error ? <p role="alert" className="m-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{error}</p> : tab === "Timeline" ? <div className="timeline-list">{events.map(event => <article className={"timeline-entry timeline-" + event.kind} key={event.id}><div className="flex items-start gap-3 p-3"><span className="timeline-icon">{event.kind === "edit" ? <FileCode2 size={14}/> : event.kind === "error" ? <Activity size={14}/> : event.kind === "output" ? <Terminal size={14}/> : <Clock3 size={14}/>}</span><span className="timeline-label"><b>{event.label}</b>{event.detail && <small>{event.detail}</small>}<small>{new Date(event.created_at).toLocaleString()}</small></span></div></article>)}{events.length === 0 && <p className="p-6 text-sm text-zinc-500">No event records were saved for this execution.</p>}</div> : tab === "Changes" ? <div className="details-changes">{changedFiles.map((item, index) => <article key={index}><FileCode2 size={14}/><div><b>{item.path}</b><small>{item.detail ?? "File operation recorded"}</small>{item.payload.size_bytes !== undefined && <small>{Number(item.payload.size_bytes).toLocaleString()} bytes saved</small>}</div></article>)}{changedFiles.length === 0 && <p className="p-6 text-sm text-zinc-500">No file-change events were recorded for this execution.</p>}</div> : <div className="details-output"><div><b>Execution status</b><span>{storedTurn?.status ?? turn.status ?? "Unknown"}</span></div><div><b>Summary</b><p>{turn.summary}</p></div><div><b>Started</b><span>{storedTurn?.started_at ? new Date(storedTurn.started_at).toLocaleString() : "Not recorded"}</span></div><div><b>Completed</b><span>{storedTurn?.completed_at ? new Date(storedTurn.completed_at).toLocaleString() : "Not completed"}</span></div><div><b>Token usage</b><span>{storedTurn?.input_tokens ?? "—"} input · {storedTurn?.output_tokens ?? "—"} output</span></div>{storedTurn?.error_message && <div role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{storedTurn.error_message}</div>}{turn.previewHtml && <Button variant="editorActive" size="sm" onClick={onPreview}>Open saved preview</Button>}{output && <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-zinc-950 p-3 text-xs text-zinc-100">{JSON.stringify(output, null, 2)}</pre>}</div>}</div>
   </section>;
 }
+
 export function ProjectDialog({ kind, open, onClose, projectName }: { kind: 'share' | 'publish'; open: boolean; onClose: () => void; projectName: string }) {
   const [scope, setScope] = useState('Workspace only'); const [email, setEmail] = useState(''); const [people, setPeople] = useState(['Nathan Hanry']); const [copied, setCopied] = useState(false); const [published, setPublished] = useState(false); const [slug, setSlug] = useState('orbit-finance'); const [domain, setDomain] = useState(''); const [notice, setNotice] = useState('');
   const url = typeof window === 'undefined' ? '' : window.location.href;
