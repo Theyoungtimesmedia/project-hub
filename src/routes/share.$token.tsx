@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { ExternalLink, LoaderCircle, ShieldAlert } from "lucide-react";
 
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, "");
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const SUPABASE_URL = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) || "https://unhwyywmnkwsjiiusauo.supabase.co").replace(/\/$/, "");
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuaHd5eXdtbmt3c2ppaXVzYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MzQ3MzMsImV4cCI6MjEwNzQxMDczM30.QXn4jIfsfVP7pg-hwyFAN4KkoF5-a-sBDV-tbjdqUks";
 
 export const Route = createFileRoute("/share/$token")({
   head: () => ({
