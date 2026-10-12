@@ -178,11 +178,13 @@ function SettingsSection({ title, children }: { title: string; children: React.R
 function DataRow({ label, value, action }: { label: string; value: string; action?: string }) { return <div className="data-row"><span>{label}</span><b>{value}</b>{action ? <Button variant="outline" size="sm">{action}</Button> : <span/>}</div>; }
 function ToggleRow({ label, detail, value, setValue }: { label: string; detail: string; value: boolean; setValue: (value: boolean) => void }) { return <div className="toggle-row"><div><b>{label}</b><p>{detail}</p></div><Button variant={value ? "editorActive" : "outline"} size="icon-sm" className={`editor-switch ${value ? "on" : ""}`} onClick={() => setValue(!value)} aria-label={`Toggle ${label}`}><i/></Button></div>; }
 
-function FeatureSurface({ surface, projectId }: { surface: Surface; projectId: string }) { const data = useMemo(() => ({ ai: ["AI usage", "Monitor models, request volume, and spend.", Sparkles], agents: ["Agent integrations", "Connect tools that extend your project agent.", Sparkles], payments: ["Payments", "Set up products, subscriptions, and checkout.", CreditCard], seo: ["SEO & AI search", "Review metadata, indexing, and accessibility.", Globe2], logs: ["Logs", "Inspect recent project activity.", Terminal] } as const), []); const item = data[surface as keyof typeof data] ?? ["Project tool", "Configure this project feature.", Settings] as const; const Icon = item[2]; if (surface === "seo") return <SeoSurface/>; if (surface === "ai") return <AiSurface/>; if (surface === "connectors") return <ConnectorsSurface projectId={projectId}/>; return <div className="feature-page"><div className="feature-empty"><span><Icon size={21}/></span><h3>{item[0]}</h3><p>{item[1]}</p><Button variant="editorActive" size="sm">Open setup</Button></div></div>; }
+function FeatureSurface({ surface, projectId }: { surface: Surface; projectId: string }) { const data = useMemo(() => ({ ai: ["AI usage", "Monitor models, request volume, and spend.", Sparkles], agents: ["Agent integrations", "Connect tools that extend your project agent.", Sparkles], payments: ["Payments", "Set up products, subscriptions, and checkout.", CreditCard], seo: ["SEO & AI search", "Review metadata, indexing, and accessibility.", Globe2], logs: ["Logs", "Inspect recent project activity.", Terminal] } as const), []); const item = data[surface as keyof typeof data] ?? ["Project tool", "Configure this project feature.", Settings] as const; const Icon = item[2]; if (surface === "seo") return <SeoSurface/>; if (surface === "ai") return <AiSurface projectId={projectId}/>; if (surface === "connectors") return <ConnectorsSurface projectId={projectId}/>; return <div className="feature-page"><div className="feature-empty"><span><Icon size={21}/></span><h3>{item[0]}</h3><p>{item[1]}</p><Button variant="editorActive" size="sm">Open setup</Button></div></div>; }
 
 function FirecrawlSurface({ projectId }: { projectId: string }) {
   const { request, invoke } = useBackend();
   const [url, setUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [lastResult, setLastResult] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -190,10 +192,14 @@ function FirecrawlSurface({ projectId }: { projectId: string }) {
 
   async function loadSources() {
     try {
-      const rows = await request<Array<{ id: string; title: string; content: string; created_at: string }>>(
-        "project_knowledge?select=id,title,content,created_at&project_id=eq." + projectId + "&order=created_at.desc&limit=8"
-      );
+      const [rows, secrets] = await Promise.all([
+        request<Array<{ id: string; title: string; content: string; created_at: string }>>(
+          "project_knowledge?select=id,title,content,created_at&project_id=eq." + projectId + "&order=created_at.desc&limit=8"
+        ),
+        request<Array<{ secret_key: string }>>("project_secrets?select=secret_key&project_id=eq." + projectId + "&secret_key=eq.FIRECRAWL_API_KEY"),
+      ]);
       setSources(rows);
+      setKeySaved(secrets.length > 0);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load saved project knowledge.");
     }
@@ -201,11 +207,20 @@ function FirecrawlSurface({ projectId }: { projectId: string }) {
 
   useEffect(() => { void loadSources(); }, [projectId]);
 
+  async function saveKey() {
+    if (!apiKey.trim()) return;
+    setBusy(true); setError(null);
+    try {
+      await request("rpc/store_project_secret", { method: "POST", body: JSON.stringify({ p_project_id: projectId, p_secret_key: "FIRECRAWL_API_KEY", p_secret_value: apiKey.trim() }) });
+      setApiKey(""); setKeySaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save Firecrawl credential.");
+    } finally { setBusy(false); }
+  }
+
   async function scrape() {
     if (!url.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    setLastResult("");
+    setBusy(true); setError(null); setLastResult("");
     try {
       const result = await invoke<{ success: boolean; title: string; sourceUrl: string; characters: number; savedAt: string }>("figurable-scrape", { projectId, url: url.trim() });
       setLastResult("Saved " + result.title + " · " + result.characters.toLocaleString() + " characters");
@@ -215,7 +230,7 @@ function FirecrawlSurface({ projectId }: { projectId: string }) {
     } finally { setBusy(false); }
   }
 
-  return <div className="feature-page connector-page"><div className="connector-hero"><div className="connector-icon firecrawl-icon"><Flame size={20}/></div><div><div className="feature-kicker">CONNECTOR <span className="connector-live">Server-side</span></div><h3>Firecrawl</h3><p>Extract readable website content into this project's persistent knowledge.</p></div></div><div className="connector-grid"><section className="connector-card"><div className="connector-card-head"><span><KeyRound size={15}/><b>Server credential</b></span></div><p>The API key is read only by the Supabase Edge Function. It is never entered into or bundled with the browser app.</p><div className="local-notice">Required Edge Function secret: FIRECRAWL_API_KEY</div></section><section className="connector-card"><div className="connector-card-head"><span><Globe2 size={15}/><b>Scrape a source</b></span></div><p>Fetch a public HTTPS page and save its Markdown so Build, Plan and Chat can use it as project context.</p><label className="settings-field">Website URL<input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/article"/></label><div className="crawl-row"><Button variant="editorActive" size="sm" disabled={busy || !url.trim()} onClick={() => void scrape()}>{busy ? "Scraping…" : "Scrape and save"}</Button></div>{lastResult && <p role="status" className="mt-3 text-xs text-emerald-700">{lastResult}</p>}{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}</section></div><section className="mt-5"><h3 className="mb-3 text-sm font-semibold text-zinc-900">Saved project sources</h3>{sources.length ? <div className="space-y-2">{sources.map(source => <article className="rounded-xl border border-zinc-200 bg-white p-3" key={source.id}><b className="text-sm">{source.title}</b><p className="mt-1 line-clamp-3 text-xs leading-5 text-zinc-500">{source.content}</p><small className="mt-2 block text-[11px] text-zinc-400">{new Date(source.created_at).toLocaleString()}</small></article>)}</div> : <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500">No sources saved to this project yet.</p>}</section></div>;
+  return <div className="feature-page connector-page"><div className="connector-hero"><div className="connector-icon firecrawl-icon"><Flame size={20}/></div><div><div className="feature-kicker">CONNECTOR <span className="connector-live">Server-side</span></div><h3>Firecrawl</h3><p>Extract readable website content into this project's persistent knowledge.</p></div></div><div className="connector-grid"><section className="connector-card"><div className="connector-card-head"><span><KeyRound size={15}/><b>Encrypted API credential</b></span><span className={keySaved ? "status-good" : "status-muted"}>{keySaved ? "Saved" : "Not configured"}</span></div><p>The key is encrypted in Supabase Vault. It is never bundled into the browser app.</p><label className="settings-field">Firecrawl API key<input type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={keySaved ? "Enter a replacement key to rotate it" : "Paste API key"}/></label><Button variant="outline" size="sm" disabled={busy || !apiKey.trim()} onClick={() => void saveKey()}>{busy ? "Saving…" : keySaved ? "Replace encrypted key" : "Save encrypted key"}</Button></section><section className="connector-card"><div className="connector-card-head"><span><Globe2 size={15}/><b>Scrape a source</b></span></div><p>Fetch a public HTTPS page and save its Markdown so Build, Plan and Chat can use it as project context.</p><label className="settings-field">Website URL<input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/article"/></label><div className="crawl-row"><Button variant="editorActive" size="sm" disabled={busy || !url.trim() || !keySaved} onClick={() => void scrape()}>{busy ? "Working…" : "Scrape and save"}</Button></div>{lastResult && <p role="status" className="mt-3 text-xs text-emerald-700">{lastResult}</p>}</section></div>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}<section className="mt-5"><h3 className="mb-3 text-sm font-semibold text-zinc-900">Saved project sources</h3>{sources.length ? <div className="space-y-2">{sources.map(source => <article className="rounded-xl border border-zinc-200 bg-white p-3" key={source.id}><b className="text-sm">{source.title}</b><p className="mt-1 line-clamp-3 text-xs leading-5 text-zinc-500">{source.content}</p><small className="mt-2 block text-[11px] text-zinc-400">{new Date(source.created_at).toLocaleString()}</small></article>)}</div> : <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500">No sources saved to this project yet.</p>}</section></div>;
 }
 
 function ConnectorsSurface({ projectId }: { projectId: string }) { const [tab, setTab] = useState("Firecrawl"); return <div className="connectors-layout"><div className="feature-tabs">{["Firecrawl", "Supabase"].map(item => <Button variant={tab === item ? "editorActive" : "ghost"} size="sm" key={item} onClick={() => setTab(item)}>{item}</Button>)}</div>{tab === "Firecrawl" ? <FirecrawlSurface projectId={projectId}/> : <SupabaseSetup projectId={projectId}/>}</div>; }
