@@ -17,7 +17,7 @@ import { useBackend } from "@/lib/backend";
 type Filter = "all" | "starred" | "mine" | "shared";
 
 const nav = [
-  ["Dashboard", Home], ["Search", Search], ["Connectors", PlugZap],
+  ["Dashboard", Home], ["Search", Search],
 ] as const;
 
 export function Dashboard() {
@@ -129,7 +129,7 @@ export function Dashboard() {
         </DropdownMenu.Root>
         <nav className="sidebar-scroll">
           <div className="nav-block">
-            {nav.map(([label, Icon], i) => <button key={label} className={`nav-item ${i === 0 ? "active" : ""}`} onClick={() => label === "Search" ? setSearchOpen(true) : undefined}><Icon size={16}/>{!collapsed && <><span>{label}</span>{label === "Search" && <kbd>⌘K</kbd>}</>}</button>)}
+            {nav.map(([label, Icon], i) => <button key={label} className={`nav-item ${i === 0 ? "active" : ""}`} onClick={() => label === "Search" ? setSearchOpen(true) : navigate({ to: "/" })}><Icon size={16}/>{!collapsed && <><span>{label}</span>{label === "Search" && <kbd>⌘K</kbd>}</>}</button>)}
           </div>
           {!collapsed && <div className="nav-label">Projects</div>}
           <div className="nav-block">
@@ -185,7 +185,7 @@ function SideFilter({ icon: Icon, label, count, active, collapsed, onClick }: { 
 }
 
 function ProjectCard({ project, list, onStar }: { project: Project; list: boolean; onStar: () => void }) {
-  return <article className="project-card"><Link className="preview-link" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><div className="browser-dots"><span/><span/><span/><i>preview</i></div><ProjectPreview name={project.name} description={project.description} live={project.live}/></Link><div className="project-meta"><div className="project-copy"><div className="project-title"><Link to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}>{project.name}</Link>{project.live && <span className="live-pill"><i/>Live</span>}</div><p>{list ? project.description : `Edited ${project.updated}`}</p></div><div className="project-actions"><button aria-label="Star project" className={project.starred ? "starred" : ""} onClick={onStar}><Star size={15} fill={project.starred ? "currentColor" : "none"}/></button><DropdownMenu.Root><DropdownMenu.Trigger asChild><button aria-label="Project menu"><MoreHorizontal size={16}/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content" align="end"><DropdownMenu.Item className="menu-item" onSelect={() => window.open("/project/" + project.id, "_blank", "noopener,noreferrer")}>Open in new tab</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div></div></article>;
+  return <article className="project-card"><Link className="preview-link" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><div className="browser-dots"><span/><span/><span/><i>project</i></div><ProjectPreview name={project.name} description={project.description} live={project.live}/></Link><div className="project-meta"><div className="project-copy"><div className="project-title"><Link to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}>{project.name}</Link>{project.live && <span className="live-pill"><i/>Live</span>}</div><p>{list ? project.description : `Edited ${project.updated}`}</p></div><div className="project-actions"><button aria-label="Star project" className={project.starred ? "starred" : ""} onClick={onStar}><Star size={15} fill={project.starred ? "currentColor" : "none"}/></button><DropdownMenu.Root><DropdownMenu.Trigger asChild><button aria-label="Project menu"><MoreHorizontal size={16}/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content" align="end"><DropdownMenu.Item className="menu-item" onSelect={() => window.open("/project/" + project.id, "_blank", "noopener,noreferrer")}>Open in new tab</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div></div></article>;
 }
 
 function SearchDialog({ open, onOpenChange, projects, query, onQueryChange }: { open: boolean; onOpenChange: (open: boolean) => void; projects: Project[]; query: string; onQueryChange: (query: string) => void }) {
