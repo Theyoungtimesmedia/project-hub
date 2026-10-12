@@ -233,4 +233,87 @@ function FirecrawlSurface({ projectId }: { projectId: string }) {
   return <div className="feature-page connector-page"><div className="connector-hero"><div className="connector-icon firecrawl-icon"><Flame size={20}/></div><div><div className="feature-kicker">CONNECTOR <span className="connector-live">Server-side</span></div><h3>Firecrawl</h3><p>Extract readable website content into this project's persistent knowledge.</p></div></div><div className="connector-grid"><section className="connector-card"><div className="connector-card-head"><span><KeyRound size={15}/><b>Encrypted API credential</b></span><span className={keySaved ? "status-good" : "status-muted"}>{keySaved ? "Saved" : "Not configured"}</span></div><p>The key is encrypted in Supabase Vault. It is never bundled into the browser app.</p><label className="settings-field">Firecrawl API key<input type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={keySaved ? "Enter a replacement key to rotate it" : "Paste API key"}/></label><Button variant="outline" size="sm" disabled={busy || !apiKey.trim()} onClick={() => void saveKey()}>{busy ? "Saving…" : keySaved ? "Replace encrypted key" : "Save encrypted key"}</Button></section><section className="connector-card"><div className="connector-card-head"><span><Globe2 size={15}/><b>Scrape a source</b></span></div><p>Fetch a public HTTPS page and save its Markdown so Build, Plan and Chat can use it as project context.</p><label className="settings-field">Website URL<input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/article"/></label><div className="crawl-row"><Button variant="editorActive" size="sm" disabled={busy || !url.trim() || !keySaved} onClick={() => void scrape()}>{busy ? "Working…" : "Scrape and save"}</Button></div>{lastResult && <p role="status" className="mt-3 text-xs text-emerald-700">{lastResult}</p>}</section></div>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}<section className="mt-5"><h3 className="mb-3 text-sm font-semibold text-zinc-900">Saved project sources</h3>{sources.length ? <div className="space-y-2">{sources.map(source => <article className="rounded-xl border border-zinc-200 bg-white p-3" key={source.id}><b className="text-sm">{source.title}</b><p className="mt-1 line-clamp-3 text-xs leading-5 text-zinc-500">{source.content}</p><small className="mt-2 block text-[11px] text-zinc-400">{new Date(source.created_at).toLocaleString()}</small></article>)}</div> : <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500">No sources saved to this project yet.</p>}</section></div>;
 }
 
-function ConnectorsSurface({ projectId }: { projectId: string }) { const [tab, setTab] = useState("Firecrawl"); return <div className="connectors-layout"><div className="feature-tabs">{["Firecrawl", "Supabase"].map(item => <Button variant={tab === item ? "editorActive" : "ghost"} size="sm" key={item} onClick={() => setTab(item)}>{item}</Button>)}</div>{tab === "Firecrawl" ? <FirecrawlSurface projectId={projectId}/> : <SupabaseSetup projectId={projectId}/>}</div>; }
+function GitHubConnectorSurface({ projectId }: { projectId: string }) {
+  const { session, request, invoke } = useBackend();
+  const [owner, setOwner] = useState("");
+  const [repo, setRepo] = useState("");
+  const [branch, setBranch] = useState("main");
+  const [token, setToken] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
+  const [autoPush, setAutoPush] = useState(true);
+  const [account, setAccount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [connections, secrets] = await Promise.all([
+          request<Array<{ repository_owner: string; repository_name: string; default_branch: string; account_label: string; auto_push_enabled: boolean }>>("github_integrations?select=repository_owner,repository_name,default_branch,account_label,auto_push_enabled&project_id=eq." + projectId),
+          request<Array<{ vault_secret_id: string }>>("project_secrets?select=vault_secret_id&project_id=eq." + projectId + "&secret_key=eq.GITHUB_TOKEN"),
+        ]);
+        if (cancelled) return;
+        if (connections[0]) {
+          setOwner(connections[0].repository_owner); setRepo(connections[0].repository_name);
+          setBranch(connections[0].default_branch); setAccount(connections[0].account_label);
+          setAutoPush(connections[0].auto_push_enabled); setStatus("Repository connected");
+        }
+        setKeySaved(secrets.length > 0);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load GitHub settings.");
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, request]);
+
+  async function saveConnection() {
+    if (!owner.trim() || !repo.trim() || busy || !session) return;
+    setBusy(true); setError(null); setStatus("");
+    try {
+      if (token.trim()) {
+        await request("rpc/store_project_secret", { method: "POST", body: JSON.stringify({ p_project_id: projectId, p_secret_key: "GITHUB_TOKEN", p_secret_value: token.trim() }) });
+        setToken(""); setKeySaved(true);
+      }
+      if (!keySaved && !token.trim()) throw new Error("Paste a GitHub token with repository Contents read/write access.");
+      const verified = await invoke<{ success: boolean; account: string; repository: string; defaultBranch: string }>("figurable-github", { projectId, owner: owner.trim(), repo: repo.trim(), branch: branch.trim() });
+      const secrets = await request<Array<{ vault_secret_id: string }>>("project_secrets?select=vault_secret_id&project_id=eq." + projectId + "&secret_key=eq.GITHUB_TOKEN");
+      if (!secrets[0]) throw new Error("The encrypted GitHub token reference could not be found.");
+      await request("github_integrations?on_conflict=project_id", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ project_id: projectId, account_label: verified.account, repository_owner: owner.trim(), repository_name: repo.trim(), default_branch: verified.defaultBranch || branch.trim() || "main", token_secret_id: secrets[0].vault_secret_id, auto_push_enabled: autoPush, created_by: session.user.id, updated_at: new Date().toISOString(), last_tested_at: new Date().toISOString(), last_sync_status: "Connection verified" }),
+      });
+      await request("projects?id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ github_repo: owner.trim() + "/" + repo.trim(), github_branch: verified.defaultBranch || branch.trim() || "main", updated_at: new Date().toISOString() }) });
+      setAccount(verified.account); setBranch(verified.defaultBranch || branch); setStatus("Connected to " + verified.repository);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "GitHub connection failed.");
+    } finally { setBusy(false); }
+  }
+
+  async function disconnect() {
+    setBusy(true); setError(null);
+    try {
+      await request("github_integrations?project_id=eq." + projectId, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      await request("project_secrets?project_id=eq." + projectId + "&secret_key=eq.GITHUB_TOKEN", { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      await request("projects?id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ github_repo: null, updated_at: new Date().toISOString() }) });
+      setKeySaved(false); setStatus("GitHub disconnected"); setAccount("");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not disconnect GitHub."); }
+    finally { setBusy(false); }
+  }
+
+  async function saveAutoPush(value: boolean) {
+    setAutoPush(value);
+    try {
+      await request("github_integrations?project_id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ auto_push_enabled: value, updated_at: new Date().toISOString() }) });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update auto-push."); }
+  }
+
+  return <div className="expanded-page"><div className="connector-hero"><span className="connector-icon"><GitBranch size={22}/></span><div><h3>GitHub</h3><p>Connect this project to a repository and optionally push each successful Build.</p></div><Button variant="outline" size="sm" disabled={busy || !status.startsWith("Connected")} onClick={() => void disconnect()}>Disconnect</Button></div><div className="setup-form"><label className="settings-field">Repository owner<input value={owner} onChange={event => setOwner(event.target.value)} placeholder="username or organisation"/></label><label className="settings-field">Repository name<input value={repo} onChange={event => setRepo(event.target.value)} placeholder="repository-name"/></label><label className="settings-field">Branch<input value={branch} onChange={event => setBranch(event.target.value)} placeholder="main"/></label><label className="settings-field">Personal access token<input type="password" autoComplete="off" value={token} onChange={event => setToken(event.target.value)} placeholder={keySaved ? "Saved in encrypted Vault · enter to rotate" : "Paste token with Contents read/write permission"}/></label></div><div className="local-notice">The token is encrypted in Supabase Vault. It is never returned to the browser after saving.</div><label className="mt-4 flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm"><input type="checkbox" checked={autoPush} onChange={event => void saveAutoPush(event.target.checked)} disabled={!status.startsWith("Connected")}/><span><b>Push successful Build changes automatically</b><small className="mt-1 block text-xs leading-5 text-zinc-500">Figurable commits generated files to the selected branch. Review repository permissions before enabling this.</small></span></label><div className="context-actions"><Button variant="editorActive" size="sm" disabled={busy || !owner.trim() || !repo.trim()} onClick={() => void saveConnection()}>{busy ? "Connecting…" : "Save and test connection"}</Button><span role="status" className={status.startsWith("Connected") ? "status-good" : "status-muted"}>{status || (keySaved ? "Token saved · repository not verified" : "Not connected")}</span></div>{account && <p className="mt-3 text-xs text-zinc-500">Authenticated GitHub account: {account}</p>}{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}</div>;
+}
+
+function ConnectorsSurface({ projectId }: { projectId: string }) {
+  const [tab, setTab] = useState("GitHub");
+  return <div className="connectors-layout"><div className="feature-tabs">{["GitHub", "Firecrawl", "Supabase"].map(item => <Button variant={tab === item ? "editorActive" : "ghost"} size="sm" key={item} onClick={() => setTab(item)}>{item}</Button>)}</div>{tab === "GitHub" ? <GitHubConnectorSurface projectId={projectId}/> : tab === "Firecrawl" ? <FirecrawlSurface projectId={projectId}/> : <SupabaseSetup projectId={projectId}/>}</div>;
+}
