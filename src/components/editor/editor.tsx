@@ -71,13 +71,18 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
   const previewTurn = (message: Message) => { setVersionId(message.id); setPreviewVersion(`Turn ${message.id} · ${message.text}`); setSurface("preview"); setPlanPreview(false); setActiveTool(null); };
   const restoreVersion = async () => {
     const version = messages.find(message => message.id === versionId);
-    if (version?.previewHtml) {
-      setPreviewHtml(version.previewHtml);
-      try { await uploadPreviewFile(new File([version.previewHtml], "index.html", { type: "text/html" }), projectId, request, upload); }
-      catch (error) { setProjectError(error instanceof Error ? error.message : "Could not restore preview HTML."); return; }
-    }
-    setVersionId(null);
-    setPreviewVersion(null);
+    if (!version?.dbId) { setProjectError("This item has no saved checkpoint to restore."); return; }
+    setBuilding(true);
+    setProjectError(null);
+    try {
+      const result = await invoke<{ success: boolean; turnId: string | null; preview_html: string | null; summary: string }>("figurable-restore", { projectId, turnId: version.dbId });
+      setPreviewHtml(result.preview_html);
+      setMessages(current => [...current, { id: Date.now(), dbId: result.turnId ?? undefined, text: "Restore checkpoint: " + version.text, summary: result.summary, kind: "build", headline, previewHtml: result.preview_html, status: "completed" }]);
+      setVersionId(null);
+      setPreviewVersion(null);
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : "Could not restore checkpoint.");
+    } finally { setBuilding(false); }
   };
 
   const runAgent = async (text: string, requestedMode: Mode) => {
