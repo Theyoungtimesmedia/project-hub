@@ -57,15 +57,15 @@ export function Dashboard() {
         }
         const workspace = workspaces[0];
         if (!workspace) throw new Error("Supabase did not return a workspace after provisioning.");
-        const rows = await request<Array<{ id: string; name: string; description: string | null; is_starred: boolean; is_published: boolean; created_by: string; updated_at: string }>>(
-          `projects?select=id,name,description,is_starred,is_published,created_by,updated_at&workspace_id=eq.${workspace.id}&order=updated_at.desc`
+        const rows = await request<Array<{ id: string; name: string; description: string | null; is_starred: boolean; published_url: string | null; created_by: string; updated_at: string }>>(
+          `projects?select=id,name,description,is_starred,published_url,created_by,updated_at&workspace_id=eq.${workspace.id}&order=updated_at.desc`
         );
         if (cancelled) return;
         setWorkspaceId(workspace.id);
         setItems(rows.map((row, index) => ({
           id: row.id, name: row.name, description: row.description ?? "",
           updated: new Date(row.updated_at).toLocaleString(), starred: row.is_starred,
-          shared: row.created_by !== session?.user.id, live: row.is_published,
+          shared: row.created_by !== session?.user.id, live: Boolean(row.published_url),
           tone: (["blue", "mint", "coral", "violet"] as const)[index % 4],
         })));
       } catch (error) {
@@ -138,7 +138,7 @@ export function Dashboard() {
           {!collapsed && <><div className="nav-label">Recents</div><div className="recent-list">{items.slice(0,5).map((project) => <Link key={project.id} to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><i className={`tone-${project.tone}`}/><span>{project.name}</span></Link>)}</div></>}
         </nav>
         <div className="sidebar-footer">
-          {!collapsed && <div className="credit-card"><div><Zap size={14}/><b>Workspace status</b><span>Private frontend prototype</span></div><Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>Import project</Button></div>}
+          {!collapsed && <div className="credit-card"><div><Zap size={14}/><b>Workspace status</b><span>Projects and files sync to Supabase</span></div><Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>Import project</Button></div>}
           <div className="profile-row"><span className="profile-avatar">J</span>{!collapsed && <><span className="profile-copy"><b>{String(session?.user.user_metadata?.name ?? "Joshua Omoniyi")}</b><small>{session?.user.email}</small></span><Button variant="ghost" size="icon" aria-label="Sign out" title="Sign out" onClick={() => void signOut()}><MoreHorizontal size={15}/></Button></>}</div>
         </div>
       </aside>
@@ -182,7 +182,7 @@ function SideFilter({ icon: Icon, label, count, active, collapsed, onClick }: { 
 }
 
 function ProjectCard({ project, list, onStar }: { project: Project; list: boolean; onStar: () => void }) {
-  return <article className="project-card"><Link className="preview-link" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><div className="browser-dots"><span/><span/><span/><i>preview</i></div><ProjectPreview tone={project.tone}/></Link><div className="project-meta"><div className="project-copy"><div className="project-title"><Link to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}>{project.name}</Link>{project.live && <span className="live-pill"><i/>Live</span>}</div><p>{list ? project.description : `Edited ${project.updated}`}</p></div><div className="project-actions"><button aria-label="Star project" className={project.starred ? "starred" : ""} onClick={onStar}><Star size={15} fill={project.starred ? "currentColor" : "none"}/></button><button aria-label="Share project"><Share2 size={15}/></button><DropdownMenu.Root><DropdownMenu.Trigger asChild><button aria-label="Project menu"><MoreHorizontal size={16}/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content" align="end"><DropdownMenu.Item className="menu-item">Open in new tab</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Rename</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Duplicate</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Project settings</DropdownMenu.Item><DropdownMenu.Separator className="menu-separator"/><DropdownMenu.Item className="menu-item danger">Delete</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div></div></article>;
+  return <article className="project-card"><Link className="preview-link" to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}><div className="browser-dots"><span/><span/><span/><i>preview</i></div><ProjectPreview name={project.name} description={project.description} live={project.live}/></Link><div className="project-meta"><div className="project-copy"><div className="project-title"><Link to="/project/$projectId" params={{ projectId: project.id }} search={{ prompt: "" }}>{project.name}</Link>{project.live && <span className="live-pill"><i/>Live</span>}</div><p>{list ? project.description : `Edited ${project.updated}`}</p></div><div className="project-actions"><button aria-label="Star project" className={project.starred ? "starred" : ""} onClick={onStar}><Star size={15} fill={project.starred ? "currentColor" : "none"}/></button><button aria-label="Share project"><Share2 size={15}/></button><DropdownMenu.Root><DropdownMenu.Trigger asChild><button aria-label="Project menu"><MoreHorizontal size={16}/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content" align="end"><DropdownMenu.Item className="menu-item">Open in new tab</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Rename</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Duplicate</DropdownMenu.Item><DropdownMenu.Item className="menu-item">Project settings</DropdownMenu.Item><DropdownMenu.Separator className="menu-separator"/><DropdownMenu.Item className="menu-item danger">Delete</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div></div></article>;
 }
 
 function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
