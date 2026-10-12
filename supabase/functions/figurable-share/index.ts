@@ -13,13 +13,18 @@ function json(body: Record<string, unknown>, status = 200) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers });
-  if (req.method !== "POST") return json({ error: "POST is required." }, 405);
+  if (req.method !== "POST" && req.method !== "GET") return json({ error: "GET or POST is required." }, 405);
   const url = Deno.env.get("SUPABASE_URL");
   const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !service) return json({ error: "Preview service is unavailable." }, 503);
-  let body: { token?: string };
-  try { body = await req.json(); } catch { return json({ error: "Request body must be valid JSON." }, 400); }
-  const token = body.token?.trim() ?? "";
+  let token = "";
+  if (req.method === "GET") {
+    token = new URL(req.url).searchParams.get("token")?.trim() ?? "";
+  } else {
+    let body: { token?: string };
+    try { body = await req.json(); } catch { return json({ error: "Request body must be valid JSON." }, 400); }
+    token = body.token?.trim() ?? "";
+  }
   if (!/^[a-f0-9]{64}$/.test(token)) return json({ error: "This preview link is invalid or has been revoked." }, 404);
 
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
@@ -51,5 +56,17 @@ Deno.serve(async (req) => {
     }
   }
   if (!previewHtml) return json({ error: "This project has no self-contained HTML preview to share yet. Generate a preview in Build mode first." }, 422);
+  if (req.method === "GET") {
+    return new Response(previewHtml, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Security-Policy": "sandbox allow-scripts; default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
   return json({ success: true, name: project.name, label: link.label, html: previewHtml });
 });
