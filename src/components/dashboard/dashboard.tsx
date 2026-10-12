@@ -50,9 +50,13 @@ export function Dashboard() {
       setLoadingProjects(true);
       setLoadError(null);
       try {
-        const workspaces = await request<Array<{ id: string; name: string }>>("workspaces?select=id,name&order=created_at.asc&limit=1");
+        let workspaces = await request<Array<{ id: string; name: string }>>("workspaces?select=id,name&order=created_at.asc&limit=1");
+        if (!workspaces.length) {
+          await request<string>("rpc/ensure_my_workspace", { method: "POST", body: "{}" });
+          workspaces = await request<Array<{ id: string; name: string }>>("workspaces?select=id,name&order=created_at.asc&limit=1");
+        }
         const workspace = workspaces[0];
-        if (!workspace) throw new Error("Your account has no workspace. Sign out and sign in again, or check the workspace bootstrap trigger in Supabase.");
+        if (!workspace) throw new Error("Supabase did not return a workspace after provisioning.");
         const rows = await request<Array<{ id: string; name: string; description: string | null; is_starred: boolean; is_published: boolean; created_by: string; updated_at: string }>>(
           `projects?select=id,name,description,is_starred,is_published,created_by,updated_at&workspace_id=eq.${workspace.id}&order=updated_at.desc`
         );
