@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useBackend } from "@/lib/backend";
+import { createZip } from "@/lib/zip";
 import { Button } from "@/components/ui/button";
 import { SupabaseSetup, SkillsManager, SeoSurface, AiSurface, SecurityAudit, AnalyticsExpanded, CloudResources, PaymentsSurface, AgentIntegrationsSurface } from "./more-pages";
 import type { Surface } from "@/lib/mock-data";
@@ -27,6 +28,8 @@ function SurfaceTitle({ title, detail, onBack }: { title: string; detail?: strin
   return <header className="surface-title">{onBack && <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to preview"><ArrowLeft size={14}/></Button>}<div><h2>{title}</h2>{detail && <p>{detail}</p>}</div></header>;
 }
 
+function isEditableText(mimeType: string) { return mimeType.startsWith("text/") || /json|javascript|xml|svg/.test(mimeType); }
+
 type StoredProjectFile = { id: string; project_id: string; file_path: string; file_name: string; mime_type: string; size_bytes: number; storage_path: string | null; text_content: string | null; source: string; updated_at: string };
 
 function CodeSurface({ projectId }: { projectId: string }) {
@@ -38,6 +41,7 @@ function CodeSurface({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function loadFiles(chooseFirst = false) {
@@ -86,16 +90,49 @@ function CodeSurface({ projectId }: { projectId: string }) {
 
   function downloadCurrent() {
     if (!selected) return;
+    if (selected.storage_path && !isEditableText(selected.mime_type)) {
+      void download(selected.storage_path).then(blob => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a"); anchor.href = url; anchor.download = selected.file_name; anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }).catch(cause => setError(cause instanceof Error ? cause.message : "Download failed."));
+      return;
+    }
     const url = URL.createObjectURL(new Blob([content], { type: selected.mime_type || "text/plain" }));
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = selected.file_name;
     anchor.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function downloadZip() {
+    if (zipBusy || files.length === 0) return;
+    setZipBusy(true); setError(null);
+    try {
+      const entries = [];
+      let total = 0;
+      for (const file of files) {
+        let bytes: Uint8Array;
+        if (file.storage_path) bytes = new Uint8Array(await (await download(file.storage_path)).arrayBuffer());
+        else if (file.text_content !== null) bytes = new TextEncoder().encode(file.text_content);
+        else continue;
+        total += bytes.byteLength;
+        if (total > 100 * 1024 * 1024) throw new Error("The project export exceeds 100 MB. Download selected files individually.");
+        entries.push({ name: file.file_path, bytes });
+      }
+      if (!entries.length) throw new Error("No stored project files were found to export.");
+      const blob = createZip(entries);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = "figurable-project-" + projectId.slice(0, 8) + ".zip"; anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create ZIP export.");
+    } finally { setZipBusy(false); }
   }
 
   const visible = files.filter(file => file.file_path.toLowerCase().includes(query.toLowerCase()));
-  return <div className="code-surface"><aside className="code-tree"><div className="code-search"><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project files"/><ChevronDown size={13}/></div><div className="tree-root"><ChevronDown size={13}/><Folder size={14}/><b>Project files</b></div>{loading && <p className="px-3 py-4 text-xs text-zinc-500">Loading files…</p>}{!loading && visible.length === 0 && <p className="px-3 py-4 text-xs text-zinc-500">No files uploaded or generated yet.</p>}{visible.map(file => <Button variant={selected?.id === file.id ? "editorActive" : "ghost"} size="sm" className="tree-file" key={file.id} onClick={() => void openFile(file)}><File size={13}/><span>{file.file_path}</span></Button>)}<Button variant="outline" size="sm" className="download-code" disabled={!selected} onClick={downloadCurrent}><Download size={13}/> Download file</Button></aside><main className="code-editor"><div className="code-editor-head"><span>{selected?.file_path ?? "No file selected"} <small>{selected?.mime_type ?? ""}</small></span><div><Button variant="ghost" size="icon-sm" title="Download file" disabled={!selected} onClick={downloadCurrent}><Download size={13}/></Button><Button variant="editorActive" size="sm" disabled={!selected || content === original || saving} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save file"}</Button></div></div>{error && <p role="alert" className="m-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{selected ? <textarea aria-label={"Edit " + selected.file_path} spellCheck={false} value={content} onChange={event => setContent(event.target.value)} className="min-h-[65vh] w-full resize-none bg-white p-4 font-mono text-xs leading-6 text-zinc-800 outline-none" /> : <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">Select a file to inspect or edit its saved contents.</div>}<div className="read-only-note"><Lock size={12}/> {selected ? (content === original ? "Saved version" : "Unsaved changes") : "Private project storage"}</div></main></div>;
+  return <div className="code-surface"><aside className="code-tree"><div className="code-search"><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project files"/><ChevronDown size={13}/></div><div className="tree-root"><ChevronDown size={13}/><Folder size={14}/><b>Project files</b></div>{loading && <p className="px-3 py-4 text-xs text-zinc-500">Loading files…</p>}{!loading && visible.length === 0 && <p className="px-3 py-4 text-xs text-zinc-500">No files uploaded or generated yet.</p>}{visible.map(file => <Button variant={selected?.id === file.id ? "editorActive" : "ghost"} size="sm" className="tree-file" key={file.id} onClick={() => void openFile(file)}><File size={13}/><span>{file.file_path}</span></Button>)}<Button variant="outline" size="sm" className="download-code" disabled={!selected} onClick={downloadCurrent}><Download size={13}/> Download file</Button><Button variant="outline" size="sm" className="download-code" disabled={zipBusy || files.length === 0} onClick={() => void downloadZip()}><Download size={13}/>{zipBusy ? "Preparing ZIP…" : "Download ZIP"}</Button></aside><main className="code-editor"><div className="code-editor-head"><span>{selected?.file_path ?? "No file selected"} <small>{selected?.mime_type ?? ""}</small></span><div><Button variant="ghost" size="icon-sm" title="Download file" disabled={!selected} onClick={downloadCurrent}><Download size={13}/></Button><Button variant="editorActive" size="sm" disabled={!selected || !isEditableText(selected.mime_type) || content === original || saving} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save file"}</Button></div></div>{error && <p role="alert" className="m-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{selected && isEditableText(selected.mime_type) ? <textarea aria-label={"Edit " + selected.file_path} spellCheck={false} value={content} onChange={event => setContent(event.target.value)} className="min-h-[65vh] w-full resize-none bg-white p-4 font-mono text-xs leading-6 text-zinc-800 outline-none" /> : selected ? <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">This is a binary file. Use Download file to retrieve the original bytes without corruption.</div> : <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">Select a file to inspect or edit its saved contents.</div>}<div className="read-only-note"><Lock size={12}/> {selected ? (content === original ? "Saved version" : "Unsaved changes") : "Private project storage"}</div></main></div>;
 }
 
 function FilesSurface({ projectId }: { projectId: string }) {
