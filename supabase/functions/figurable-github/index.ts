@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
     repo = integration.repository_name;
     branch = integration.default_branch || "main";
   }
-  if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo) || !/^[A-Za-z0-9_.\/-]{1,200}$/.test(branch) || branch.includes("..")) {
+  if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo) || !/^[A-Za-z0-9_./-]{1,200}$/.test(branch) || branch.includes("..")) {
     return json({ error: "Repository owner, name or branch contains invalid characters." }, 400);
   }
 
