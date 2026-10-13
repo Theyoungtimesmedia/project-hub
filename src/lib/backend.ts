@@ -251,7 +251,7 @@ export function BackendProvider({ children }: { children: ReactNode }) {
     session, loading, configured: Boolean(SUPABASE_URL && SUPABASE_ANON_KEY), signIn, signUp, signOut, request, invoke, upload, download, remove,
   }), [session, loading, signIn, signUp, signOut, request, invoke, upload, download, remove]);
 
-  return <BackendContext.Provider value={value}>{children}</BackendContext.Provider>;
+  return createElement(BackendContext.Provider, { value }, children);
 }
 
 export function useBackend() {
