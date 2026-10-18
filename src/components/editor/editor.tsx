@@ -27,11 +27,13 @@ const pages = [
 ];
 const defaultPage = pages[0]!;
 
-export function Editor({ projectId, initialPrompt }: { projectId: string; initialPrompt?: string }) {
+export function Editor({ projectId, initialPrompt, initialMode = "Build" }: { projectId: string; initialPrompt?: string; initialMode?: Mode }) {
   const { session, request, invoke, upload, download } = useBackend();
   const [projectName, setProjectName] = useState("Loading project…");
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectLoaded, setProjectLoaded] = useState(false);
+  const initialPromptHandled = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [attachedFiles, setAttachedFiles] = useState<Array<{ file_path: string; file_name: string; size_bytes: number }>>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
@@ -208,7 +210,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     else setSurface(next);
   };
 
-  useEffect(() => { if (initialPrompt) setDraft(initialPrompt); }, [initialPrompt]);
+  useEffect(() => { if (initialPrompt) setDraft(initialPrompt); setMode(initialMode); }, [initialPrompt, initialMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,6 +256,7 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
         if (latestPlan?.plan_payload) {
           setPlan({ title: latestPlan.plan_payload.title ?? latestPlan.prompt, text: latestPlan.plan_payload.text ?? "", steps: (latestPlan.plan_payload.steps ?? []).map(step => Boolean(step.completed)), stepDetails: (latestPlan.plan_payload.steps ?? []).map(step => ({ title: step.title ?? "Implementation step", detail: step.detail ?? "" })), files: latestPlan.plan_payload.files ?? [], status: "review" });
         }
+        if (!cancelled) setProjectLoaded(true);
       } catch (error) {
         if (!cancelled) setProjectError(error instanceof Error ? error.message : "Could not load project.");
       }
@@ -261,6 +264,13 @@ export function Editor({ projectId, initialPrompt }: { projectId: string; initia
     void loadProject();
     return () => { cancelled = true; };
   }, [projectId, request, download, session?.user.id]);
+  useEffect(() => {
+    if (!projectLoaded || !initialPrompt?.trim() || initialPromptHandled.current) return;
+    initialPromptHandled.current = true;
+    setDraft("");
+    void runAgent(initialPrompt.trim(), initialMode);
+  }, [projectLoaded, initialPrompt, initialMode]);
+
   useEffect(() => { inputRef.current?.focus(); }, [surface]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
