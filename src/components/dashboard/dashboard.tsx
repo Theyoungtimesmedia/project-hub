@@ -94,7 +94,7 @@ export function Dashboard() {
       });
       const created = rows[0];
       if (!created) throw new Error("Supabase did not return the new project.");
-      navigate({ to: "/project/$projectId", params: { projectId: created.id }, search: { prompt: prompt.trim() } });
+      navigate({ to: "/project/$projectId", params: { projectId: created.id }, search: { prompt: prompt.trim(), mode } });
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Project creation failed.");
     }
