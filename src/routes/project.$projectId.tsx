@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { Editor } from "@/components/editor/editor";
 
-const searchSchema = z.object({ prompt: z.string().optional().catch("") });
+const searchSchema = z.object({ prompt: z.string().optional().catch(""), mode: z.enum(["Build", "Plan"]).optional() });
 
 export const Route = createFileRoute("/project/$projectId")({
   validateSearch: searchSchema,
@@ -21,6 +21,6 @@ export const Route = createFileRoute("/project/$projectId")({
 
 function ProjectEditorRoute() {
   const { projectId } = Route.useParams();
-  const { prompt } = Route.useSearch();
-  return <Editor projectId={projectId} initialPrompt={prompt ?? ""}/>;
+  const { prompt, mode } = Route.useSearch();
+  return <Editor projectId={projectId} initialPrompt={prompt ?? ""} initialMode={mode ?? "Build"}/>;
 }
