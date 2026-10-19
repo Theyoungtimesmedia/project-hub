@@ -505,3 +505,26 @@ button, a { -webkit-tap-highlight-color: transparent; }
  .more-sidebar .button { min-height:40px; grid-template-columns:1fr; gap:0; padding:0; }
  .more-sidebar .button span { display:none; }
 }
+
+
+/* Dashboard redesign: Lovable-inspired launch surface with an optional user-owned background. */
+.dashboard-shell { position:relative; min-height:100vh; overflow:clip; background:#f7f7f8; }
+.dashboard-background { position:fixed; z-index:0; inset:0 0 0 290px; background-color:#a9c7ff; background-image:linear-gradient(160deg,rgba(246,249,255,.97) 2%,rgba(93,145,255,.82) 34%,rgba(229,105,224,.78) 63%,rgba(255,20,95,.94) 100%),url('/dashboard-background.png'); background-size:cover; background-position:center; pointer-events:none; }
+.dashboard-sidebar { z-index:30; width:290px; background:rgba(247,247,247,.96)!important; border-right:1px solid rgba(20,20,30,.12); backdrop-filter:blur(24px); }
+.dashboard-main { position:relative; z-index:1; min-height:100vh; margin-left:290px; padding:0 24px 0; background:transparent; }
+.launchpad { position:relative; display:flex; min-height:calc(100vh - 110px); flex-direction:column; align-items:center; justify-content:flex-start; padding:170px 20px 72px; background:transparent!important; }
+.launchpad .eyebrow { display:none; }
+.launchpad h1 { margin:0 0 34px; color:#101116; font-size:clamp(28px,2.1vw,38px); font-weight:650; letter-spacing:-.045em; text-align:center; }
+.hero-composer { width:min(790px,100%); min-height:112px; border:1px solid rgba(20,20,30,.09); border-radius:30px!important; padding:18px 20px 12px; background:rgba(255,255,255,.98)!important; box-shadow:0 16px 44px rgba(25,32,58,.13)!important; }
+.hero-composer textarea { min-height:42px; padding:5px 3px; font-size:17px; }
+.composer-bar { gap:8px; }
+.mode-switch { margin-left:auto; }
+.prompt-suggestions { display:none; }
+.projects-section { position:relative; z-index:2; margin:0 -24px; min-height:280px; border-radius:30px 30px 0 0; padding:28px clamp(20px,3vw,48px) 44px; background:rgba(255,255,255,.97)!important; box-shadow:0 -5px 40px rgba(30,35,60,.07); }
+.projects-heading { display:none; }
+.gallery-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px; border:0; padding:0 0 20px; }
+.gallery-toolbar .tabs { order:0; border:1px solid rgba(25,25,35,.12); border-radius:999px; padding:4px; }
+.gallery-toolbar .toolbar-actions { margin-left:auto; }
+.project-gallery { padding-top:8px; }
+@media(max-width:900px) { .dashboard-sidebar { width:250px; } .dashboard-main { margin-left:250px; padding-inline:16px; } .dashboard-background { left:250px; } .launchpad { padding-top:125px; min-height:calc(100vh - 100px); } .projects-section { margin-inline:-16px; } }
+@media(max-width:640px) { .dashboard-sidebar { width:290px; } .dashboard-main { margin-left:0; padding:0 12px; } .dashboard-background { inset:0; } .launchpad { min-height:72vh; padding:125px 8px 48px; } .launchpad h1 { font-size:28px; } .hero-composer { border-radius:24px!important; } .projects-section { margin-inline:-12px; border-radius:24px 24px 0 0; padding:20px 14px 34px; } .gallery-toolbar .toolbar-actions { margin-left:0; width:100%; flex-wrap:wrap; } }
