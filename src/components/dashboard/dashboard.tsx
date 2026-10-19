@@ -7,7 +7,6 @@ import {
   Star, User, Users, X, Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import ambient from "@/assets/ambient-studio.jpg";
 import { Button } from "@/components/ui/button";
 import { ProjectPreview } from "./project-preview";
 import { ImportDialog } from "./import-dialog";
@@ -115,7 +114,7 @@ export function Dashboard() {
 
   return (
     <div className="dashboard-shell">
-      <img className="ambient-background" src={ambient} alt="" width={1536} height={1024} />
+      <div className="dashboard-background" aria-hidden="true" />
       <Button variant="outline" size="icon" className="mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={16}/></Button>
       <aside className={`dashboard-sidebar ${collapsed ? "is-collapsed" : ""} ${mobileOpen ? "is-mobile-open" : ""}`}>
         <div className="brand-row">
@@ -151,11 +150,11 @@ export function Dashboard() {
           <p className="eyebrow"><span/> Your workspace is ready</p>
           <h1>What do you want to build?</h1>
           <div className="hero-composer">
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createProject(); } }} placeholder="Describe what you want to build..." aria-label="Project prompt"/>
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!loadingProjects && workspaceId && prompt.trim()) void createProject(); } }} placeholder="Describe what you want to build..." aria-label="Project prompt"/>
             <div className="composer-bar">
               <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="ghost" size="icon" aria-label="Attach"><Paperclip size={17}/></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content"><DropdownMenu.Item className="menu-item" onSelect={() => setImportOpen(true)}>Import a GitHub repository</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
               <div className="mode-switch"><button className={mode === "Build" ? "active" : ""} onClick={() => setMode("Build")}>Build</button><button className={mode === "Plan" ? "active" : ""} onClick={() => setMode("Plan")}>Plan</button></div>
-              <span className="composer-spacer"/><Button variant={prompt.trim() ? "primary" : "default"} size="icon" aria-label="Send prompt" onClick={createProject} disabled={!prompt.trim() || !workspaceId}><ArrowUp size={17}/></Button>
+              <span className="composer-spacer"/><Button variant={prompt.trim() ? "primary" : "default"} size="icon" aria-label="Send prompt" onClick={createProject} disabled={!prompt.trim() || !workspaceId || loadingProjects} title={!workspaceId ? "Connecting to workspace…" : "Build project"}><ArrowUp size={17}/></Button>
             </div>
           </div>
           <div className="prompt-suggestions"><button onClick={() => setPrompt("Build a refined analytics dashboard")}>Analytics dashboard</button><button onClick={() => setPrompt("Create an editorial ecommerce store")}>Online store</button><button onClick={() => setPrompt("Design a focused portfolio")}>Portfolio</button></div>
