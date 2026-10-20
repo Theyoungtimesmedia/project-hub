@@ -12,8 +12,6 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { BackendProvider } from "@/lib/backend";
-import { BackendGate } from "@/components/auth/backend-gate";
 
 function NotFoundComponent() {
   return (
@@ -80,7 +78,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { name: "author", content: "Figurable.dev" },
+      { name: "author", content: "Lovable Studio" },
     ],
     links: [
       {
@@ -118,12 +116,8 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BackendProvider>
-        <BackendGate>
-          {/* Nested routes are protected by the Supabase session gate. */}
-          <Outlet />
-        </BackendGate>
-      </BackendProvider>
+      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+      <Outlet />
     </QueryClientProvider>
   );
 }

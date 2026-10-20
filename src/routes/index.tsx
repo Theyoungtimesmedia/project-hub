@@ -1,16 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Dashboard } from "@/components/dashboard/dashboard";
+import { Editor } from "@/components/editor/editor";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Figurable.dev — Your build workspace" },
-      { name: "description", content: "A focused workspace to plan, build, preview, and refine your projects." },
-      { property: "og:title", content: "Figurable.dev — Your build workspace" },
-      { property: "og:description", content: "A focused workspace to plan, build, preview, and refine your projects." },
+      { title: "Project Editor — Lovable Studio" },
+      { name: "description", content: "Build, preview, and refine a project in the Lovable Studio editor." },
+      { property: "og:title", content: "Project Editor — Lovable Studio" },
+      { property: "og:description", content: "Build, preview, and refine a project in the Lovable Studio editor." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: Dashboard,
+  component: () => <Editor projectId="orbit-finance"/>,
 });
