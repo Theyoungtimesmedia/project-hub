@@ -64,11 +64,12 @@ export function Dashboard() {
         );
         if (cancelled) return;
         setWorkspaceId(workspace.id);
+        const tones: Project["tone"][] = ["blue", "mint", "coral", "violet"];
         setItems(rows.map((row, index) => ({
           id: row.id, name: row.name, description: row.description ?? "",
           updated: new Date(row.updated_at).toLocaleString(), starred: row.is_starred,
           shared: row.created_by !== session?.user.id, live: Boolean(row.published_url),
-          tone: (["blue", "mint", "coral", "violet"] as const)[index % 4],
+          tone: tones[index % tones.length] ?? "blue",
         })));
       } catch (error) {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : "Could not load projects.");

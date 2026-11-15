@@ -1,15 +1,20 @@
 import { describe, test } from 'node:test';
 import { deepStrictEqual } from 'node:assert';
-import { getAvailableSkills, getDefaultSkillCommands } from './mock-data';
+import { getAvailableSkills, type SkillCommand } from './mock-data';
 
-describe('local skill activation', () => {
-  test('draft release review is excluded until activated', () => {
-    const enabled = getDefaultSkillCommands();
-    deepStrictEqual(getAvailableSkills(enabled, 'release'), []);
-    deepStrictEqual(getAvailableSkills([...enabled, '/release-review'], 'release').map(skill => skill.command), ['/release-review']);
+describe('enabled workspace skill filtering', () => {
+  const skills: SkillCommand[] = [
+    { command: '/release-review', title: 'Release review', detail: 'Review a release.' },
+    { command: '/goal', title: 'Goal', detail: 'Clarify a goal.' },
+  ];
+
+  test('returns matching skills only when enabled', () => {
+    deepStrictEqual(getAvailableSkills(skills, [], 'release'), []);
+    deepStrictEqual(getAvailableSkills(skills, ['/release-review'], 'release').map(skill => skill.command), ['/release-review']);
   });
-  test('disabled goal skill is excluded from slash results', () => {
-    deepStrictEqual(getAvailableSkills(getDefaultSkillCommands(), 'goal').map(skill => skill.command), ['/goal']);
-    deepStrictEqual(getAvailableSkills(getDefaultSkillCommands().filter(command => command !== '/goal'), 'goal'), []);
+
+  test('matches enabled skills by slash command or title without regard to case', () => {
+    deepStrictEqual(getAvailableSkills(skills, ['/goal'], 'GOAL').map(skill => skill.command), ['/goal']);
+    deepStrictEqual(getAvailableSkills(skills, ['/goal'], 'release'), []);
   });
 });

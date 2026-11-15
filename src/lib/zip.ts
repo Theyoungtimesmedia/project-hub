@@ -13,7 +13,7 @@ const crcTable = (() => {
 
 function crc32(bytes: Uint8Array) {
   let value = 0xffffffff;
-  for (const byte of bytes) value = crcTable[(value ^ byte) & 0xff] ^ (value >>> 8);
+  for (const byte of bytes) value = (crcTable[(value ^ byte) & 0xff] ?? 0) ^ (value >>> 8);
   return (value ^ 0xffffffff) >>> 0;
 }
 function header(size: number, signature: number) {
@@ -57,5 +57,10 @@ export function createZip(inputs: ZipInput[]) {
   const ev = new DataView(end.buffer);
   put16(ev, 4, 0); put16(ev, 6, 0); put16(ev, 8, inputs.length); put16(ev, 10, inputs.length);
   put32(ev, 12, centralSize); put32(ev, 16, localOffset); put16(ev, 20, 0);
-  return new Blob([...localParts, ...centralParts, end], { type: "application/zip" });
+  const blobParts = [...localParts, ...centralParts, end].map(part => {
+    const buffer = new ArrayBuffer(part.byteLength);
+    new Uint8Array(buffer).set(part);
+    return buffer;
+  });
+  return new Blob(blobParts, { type: "application/zip" });
 }

@@ -12,12 +12,14 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useBackend } from "@/lib/backend";
-import type { Surface } from "@/lib/mock-data";
+import { getAvailableSkills, type SkillCommand, type Surface } from "@/lib/mock-data";
 import { SurfacePanel } from "./surfaces";
 import { PlanCard, PlanPreview, BuildDetailsDrawer, ProjectDialog, type PlanState } from "./contextual";
 
 type MessageKind = "build" | "plan" | "secret" | "question";
-type Message = { id: number; dbId?: string; text: string; summary: string; kind: MessageKind; headline: string; previewHtml?: string | null; planPayload?: { title?: string; text?: string; steps?: Array<{ title?: string; detail?: string; completed?: boolean; path?: string; action?: string }>; files?: Array<{ path: string; action: string }>; status?: string } | null; status?: string };
+type PlanPayload = { title?: string; text?: string; steps?: Array<{ title?: string; detail?: string; completed?: boolean; path?: string; action?: string }>; files?: Array<{ path: string; action: string }>; status?: string };
+type StoredChatTurn = { id: string; mode: Mode; prompt: string; summary: string | null; status: string; created_at: string; result_payload: { preview_html?: string | null } | null; plan_payload: PlanPayload | null };
+type Message = { id: number; dbId?: string; text: string; summary: string; kind: MessageKind; headline: string; previewHtml?: string | null; planPayload?: PlanPayload | null; status?: string };
 type Device = "desktop" | "tablet" | "mobile";
 type Mode = "Build" | "Chat" | "Plan";
 type PreviewTool = "select" | "text" | "draw" | "comment";
@@ -64,12 +66,12 @@ export function Editor({ projectId, initialPrompt, initialMode = "Build" }: { pr
   const [versionId, setVersionId] = useState<number | null>(null);
   const [skillIndex, setSkillIndex] = useState(0);
   const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
-  const [skillCommands, setSkillCommands] = useState<Array<{ command: string; title: string; detail: string; instructions?: string }>>([]);
+  const [skillCommands, setSkillCommands] = useState<SkillCommand[]>([]);
   const [previewVersion, setPreviewVersion] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const slashQuery = useMemo(() => draft.match(/(?:^|\s)\/(\S*)$/)?.[1] ?? null, [draft]);
-  const filteredSkills = slashQuery === null ? [] : skillCommands.filter(skill => enabledSkills.includes(skill.command) && (skill.command + " " + skill.title).toLowerCase().includes(slashQuery.toLowerCase()));
+  const filteredSkills = slashQuery === null ? [] : getAvailableSkills(skillCommands, enabledSkills, slashQuery);
   const filteredPages = pages.filter((page) => `${page.name} ${page.path}`.toLowerCase().includes(pageSearch.toLowerCase()));
 
   const previewTurn = (message: Message) => { setVersionId(message.id); setPreviewVersion(`Turn ${message.id} · ${message.text}`); setSurface("preview"); setPlanPreview(false); setActiveTool(null); };
@@ -81,7 +83,7 @@ export function Editor({ projectId, initialPrompt, initialMode = "Build" }: { pr
     try {
       const result = await invoke<{ success: boolean; turnId: string | null; preview_html: string | null; summary: string }>("figurable-restore", { projectId, turnId: version.dbId });
       setPreviewHtml(result.preview_html);
-      setMessages(current => [...current, { id: Date.now(), dbId: result.turnId ?? undefined, text: "Restore checkpoint: " + version.text, summary: result.summary, kind: "build", headline, previewHtml: result.preview_html, status: "completed" }]);
+      setMessages(current => [...current, { id: Date.now(), ...(result.turnId ? { dbId: result.turnId } : {}), text: "Restore checkpoint: " + version.text, summary: result.summary, kind: "build", headline, previewHtml: result.preview_html, status: "completed" }]);
       setVersionId(null);
       setPreviewVersion(null);
     } catch (error) {
@@ -100,15 +102,15 @@ export function Editor({ projectId, initialPrompt, initialMode = "Build" }: { pr
       const result = await invoke<{ turnId: string; mode: Mode; status: string; summary: string; result?: { preview_html?: string | null }; plan?: Message["planPayload"] }>("figurable-agent", {
         projectId, mode: requestedMode, prompt: text, selectedContext,
       });
-      const rows = await request<Array<{ id: string; mode: Mode; prompt: string; summary: string | null; status: string; created_at: string; result_payload: { preview_html?: string | null } | null; plan_payload: Message["planPayload"] }>(
+      const rows = await request<StoredChatTurn[]>(
         "chat_turns?select=id,mode,prompt,summary,status,created_at,result_payload,plan_payload&id=eq." + result.turnId
       );
       const row = rows[0];
       const mapped: Message = row ? {
         id: (Date.parse(row.created_at) || tempId) + messages.length, dbId: row.id, text: row.prompt, summary: row.summary ?? result.summary,
         kind: row.mode === "Plan" ? "plan" : row.mode === "Chat" ? "question" : "build", headline, previewHtml: row.result_payload?.preview_html ?? null,
-        planPayload: row.plan_payload, status: row.status,
-      } : { ...optimistic, summary: result.summary, status: "completed", previewHtml: result.result?.preview_html ?? null, planPayload: result.plan };
+        planPayload: row.plan_payload ?? null, status: row.status,
+      } : { ...optimistic, summary: result.summary, status: "completed", previewHtml: result.result?.preview_html ?? null, planPayload: result.plan ?? null };
       setMessages(current => current.map(message => message.id === tempId ? mapped : message));
       if (mapped.previewHtml) setPreviewHtml(mapped.previewHtml);
       if (requestedMode === "Plan" && mapped.planPayload) {
@@ -226,7 +228,7 @@ export function Editor({ projectId, initialPrompt, initialMode = "Build" }: { pr
           setSkillCommands(skillRows.map(skill => ({ command: skill.command, title: skill.name, detail: skill.description, instructions: skill.instructions })));
           setEnabledSkills(skillRows.filter(skill => skill.is_enabled).map(skill => skill.command));
         }
-        const turns = await request<Array<{ id: string; mode: Mode; prompt: string; summary: string | null; status: string; created_at: string; result_payload: { preview_html?: string | null } | null; plan_payload: Message["planPayload"] }>>(
+        const turns = await request<StoredChatTurn[]>(
           "chat_turns?select=id,mode,prompt,summary,status,created_at,result_payload,plan_payload&project_id=eq." + projectId + "&order=created_at.asc"
         );
         if (cancelled) return;
@@ -234,7 +236,7 @@ export function Editor({ projectId, initialPrompt, initialMode = "Build" }: { pr
           id: (Date.parse(row.created_at) || index + 1) + index, dbId: row.id, text: row.prompt,
           summary: row.summary ?? (row.status === "failed" ? "This execution failed." : "Execution is still running."),
           kind: row.mode === "Plan" ? "plan" : "build", headline, previewHtml: row.result_payload?.preview_html ?? null,
-          planPayload: row.plan_payload, status: row.status,
+          planPayload: row.plan_payload ?? null, status: row.status,
         }));
         setMessages(mapped);
         const latestBuild = [...turns].reverse().find(row => row.mode === "Build" && row.status === "completed" && row.result_payload?.preview_html);

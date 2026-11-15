@@ -1,7 +1,7 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "https://unhwyywmnkwsjiiusauo.supabase.co").replace(/\/$/, "");
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuaHd5eXdtbmt3c2ppaXVzYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MzQ3MzMsImV4cCI6MjEwNzQxMDczM30.QXn4jIfsfVP7pg-hwyFAN4KkoF5-a-sBDV-tbjdqUks";
+const SUPABASE_URL = (import.meta.env["VITE_SUPABASE_URL"] || "https://unhwyywmnkwsjiiusauo.supabase.co").replace(/\/$/, "");
+const SUPABASE_ANON_KEY = import.meta.env["VITE_SUPABASE_ANON_KEY"] || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuaHd5eXdtbmt3c2ppaXVzYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MzQ3MzMsImV4cCI6MjEwNzQxMDczM30.QXn4jIfsfVP7pg-hwyFAN4KkoF5-a-sBDV-tbjdqUks";
 const SESSION_KEY = "sb-unhwyywmnkwsjiiusauo-auth-token";
 
 type BackendUser = { id: string; email?: string; user_metadata?: { name?: string; full_name?: string; [key: string]: unknown } };

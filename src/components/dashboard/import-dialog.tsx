@@ -23,8 +23,10 @@ export function ImportDialog({ open, onOpenChange, workspaceId }: { open: boolea
     if (parsed.protocol !== "https:" || parsed.hostname !== "github.com") throw new Error("Use an HTTPS URL from github.com.");
     const parts = parsed.pathname.split("/").filter(Boolean);
     if (parts.length < 2) throw new Error("The URL must contain an owner and repository name.");
-    const owner = parts[0];
-    const repo = parts[1].replace(/\\.git$/i, "");
+    const owner = parts.at(0);
+    const repository = parts.at(1);
+    if (!owner || !repository) throw new Error("The URL must contain an owner and repository name.");
+    const repo = repository.replace(/\.git$/i, "");
     if (!token.trim()) throw new Error("A GitHub token is required to read this repository.");
     const name = projectName.trim() || repo.replace(/[-_]+/g, " ").replace(/\\b\\w/g, char => char.toUpperCase());
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
