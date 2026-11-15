@@ -1,82 +1,476 @@
 import {
   Activity, ArrowLeft, BarChart3, Check, CheckCircle2, ChevronDown, ChevronRight, Cloud, Code2, Copy,
   CreditCard, Database, Download, ExternalLink, File, FileText, Flame, Folder, Globe2, GitBranch, KeyRound, Lock,
-  MoreHorizontal, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Terminal,
+  MoreHorizontal, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Terminal, Trash2,
   Users, History as HistoryIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useBackend } from "@/lib/backend";
+import { createZip } from "@/lib/zip";
 import { Button } from "@/components/ui/button";
 import { SupabaseSetup, SkillsManager, SeoSurface, AiSurface, SecurityAudit, AnalyticsExpanded, CloudResources, PaymentsSurface, AgentIntegrationsSurface } from "./more-pages";
 import type { Surface } from "@/lib/mock-data";
 
 const moreNav: { label: string; value: Surface; icon: typeof Cloud }[] = [
-  { label: "Analytics", value: "analytics", icon: BarChart3 }, { label: "Cloud", value: "cloud", icon: Cloud },
-  { label: "AI", value: "ai", icon: Sparkles }, { label: "Agent integrations", value: "agents", icon: Sparkles },
-  { label: "Payments", value: "payments", icon: CreditCard }, { label: "Connectors", value: "connectors", icon: GitBranch },
-  { label: "Security", value: "security", icon: ShieldCheck }, { label: "SEO & AI search", value: "seo", icon: Search },
-  { label: "Settings", value: "settings", icon: Settings },
+  { label: "AI", value: "ai", icon: Sparkles },
+  { label: "Connectors", value: "connectors", icon: GitBranch },
+  { label: "Settings & context", value: "settings", icon: Settings },
 ];
 
-export function SurfacePanel({ surface, onBack, onSelectSurface, versions, onPreviewVersion, enabledSkills, setEnabledSkills }: { surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; versions: { id: number; text: string }[]; onPreviewVersion: (id: number) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
-  if (surface === "code") return <CodeSurface/>;
-  if (surface === "files") return <FilesSurface/>;
+export function SurfacePanel({ projectId, surface, onBack, onSelectSurface, versions, onPreviewVersion, enabledSkills, setEnabledSkills }: { projectId: string; surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; versions: { id: number; text: string }[]; onPreviewVersion: (id: number) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
+  if (surface === "code") return <CodeSurface projectId={projectId}/>;
+  if (surface === "files") return <FilesSurface projectId={projectId}/>;
   if (surface === "history") return <HistorySurface onBack={onBack} versions={versions} onPreviewVersion={onPreviewVersion}/>;
-  return <MoreSurface enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills} surface={surface} onBack={onBack} onSelectSurface={onSelectSurface}/>;
+  return <MoreSurface projectId={projectId} enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills} surface={surface} onBack={onBack} onSelectSurface={onSelectSurface}/>;
 }
 
 function SurfaceTitle({ title, detail, onBack }: { title: string; detail?: string; onBack?: () => void }) {
   return <header className="surface-title">{onBack && <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to preview"><ArrowLeft size={14}/></Button>}<div><h2>{title}</h2>{detail && <p>{detail}</p>}</div></header>;
 }
 
-function CodeSurface() {
-  const [selectedFile, setSelectedFile] = useState("src/components/editor/editor.tsx");
+function isEditableText(mimeType: string) { return mimeType.startsWith("text/") || /json|javascript|xml|svg/.test(mimeType); }
+
+type StoredProjectFile = { id: string; project_id: string; file_path: string; file_name: string; mime_type: string; size_bytes: number; storage_path: string | null; text_content: string | null; source: string; updated_at: string };
+
+function CodeSurface({ projectId }: { projectId: string }) {
+  const { request, download, upload, remove } = useBackend();
+  const [files, setFiles] = useState<StoredProjectFile[]>([]);
+  const [selected, setSelected] = useState<StoredProjectFile | null>(null);
+  const [content, setContent] = useState("");
+  const [original, setOriginal] = useState("");
   const [query, setQuery] = useState("");
-  const [markdownPreview, setMarkdownPreview] = useState(false);
-  const files = ["src/components/editor/editor.tsx", "src/components/editor/surfaces.tsx", "src/routes/index.tsx", "src/styles.css", "public/favicon.ico"];
-  const visible = files.filter((file) => file.includes(query.toLowerCase()));
-  const source = `import { useState } from "react";\nimport { Button } from "@/components/ui/button";\n\nexport function ProjectEditor() {\n  const [surface, setSurface] = useState("preview");\n\n  return (\n    <main className="editor">\n      <ProjectToolbar active={surface} />\n      <Preview surface={surface} />\n    </main>\n  );\n}`;
-  return <div className="code-surface"><aside className="code-tree"><div className="code-search"><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search code"/><ChevronDown size={13}/></div><div className="tree-root"><ChevronDown size={13}/><Folder size={14}/><b>project</b></div>{visible.map((file) => <Button variant={selectedFile === file ? "editorActive" : "ghost"} size="sm" className="tree-file" key={file} onClick={() => setSelectedFile(file)}><File size={13}/><span>{file}</span></Button>)}<Button variant="outline" size="sm" className="download-code"><Download size={13}/> Download codebase</Button></aside><main className="code-editor"><div className="code-editor-head"><span>{selectedFile.split("/").at(-1)} <small>TSX</small></span><div><Button variant={selectedFile.endsWith(".md") && markdownPreview ? "editorActive" : "ghost"} size="sm" onClick={() => setMarkdownPreview((value) => !value)}>Preview markdown</Button><Button variant="ghost" size="icon-sm" title="Copy file"><Copy size={13}/></Button><Button variant="ghost" size="icon-sm" title="More"><MoreHorizontal size={13}/></Button></div></div>{markdownPreview ? <div className="markdown-preview"><h2>Project editor notes</h2><p>Readable project documentation can be previewed without leaving the code workspace.</p></div> : <pre className="numbered-code"><code>{source.split("\n").map((line, index) => <span key={`${index}-${line}`}><i>{String(index + 1).padStart(2, "0")}</i>{line || " "}</span>)}</code></pre>}<div className="read-only-note"><Lock size={12}/> Read only <Button variant="editorActive" size="sm">Upgrade</Button></div></main></div>;
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
+  const [newPath, setNewPath] = useState("");
+  const [creatingFile, setCreatingFile] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadFiles(chooseFirst = false) {
+    setLoading(true);
+    setError(null);
+    try {
+      const rows = await request<StoredProjectFile[]>("project_files?select=id,project_id,file_path,file_name,mime_type,size_bytes,storage_path,text_content,source,updated_at&project_id=eq." + projectId + "&order=file_path.asc");
+      setFiles(rows);
+      if (chooseFirst && rows.length) await openFile(rows[0]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load project files.");
+    } finally { setLoading(false); }
+  }
+
+  async function openFile(file: StoredProjectFile) {
+    setSelected(file);
+    setError(null);
+    try {
+      let text = file.text_content;
+      if (text === null && file.storage_path && isEditableText(file.mime_type)) text = await (await download(file.storage_path)).text();
+      setContent(text ?? "");
+      setOriginal(text ?? "");
+    } catch (cause) {
+      setContent("");
+      setOriginal("");
+      setError(cause instanceof Error ? cause.message : "Could not open file.");
+    }
+  }
+
+  useEffect(() => { void loadFiles(true); }, [projectId]);
+
+  async function saveFile() {
+    if (!selected) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const path = selected.storage_path ?? projectId + "/" + selected.file_path;
+      await upload(path, new File([content], selected.file_name, { type: selected.mime_type || "text/plain" }));
+      await request("project_files?id=eq." + selected.id, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ storage_path: path, text_content: content.length <= 100000 ? content : null, size_bytes: new TextEncoder().encode(content).length, updated_at: new Date().toISOString() }) });
+      setOriginal(content);
+      await loadFiles(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save file.");
+    } finally { setSaving(false); }
+  }
+
+  async function createFile() {
+    const path = newPath.trim().replaceAll("\\", "/").replace(/^\/+/, "");
+    if (!path || path.split("/").some(part => !part || part === "." || part === "..")) {
+      setError("Enter a valid relative project path, such as src/components/Header.tsx.");
+      return;
+    }
+    if (files.some(file => file.file_path === path)) {
+      setError("A file with that path already exists.");
+      return;
+    }
+    setCreatingFile(true); setError(null);
+    try {
+      const mime = path.endsWith(".html") ? "text/html" : path.endsWith(".css") ? "text/css" : path.endsWith(".json") ? "application/json" : /\.(js|jsx|ts|tsx|mjs)$/i.test(path) ? "text/javascript" : "text/plain";
+      const storagePath = projectId + "/" + path;
+      const empty = "";
+      await upload(storagePath, new File([empty], path.split("/").at(-1) ?? "new-file", { type: mime }));
+      await request("project_files?on_conflict=project_id,file_path", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ project_id: projectId, file_path: path, file_name: path.split("/").at(-1), mime_type: mime, size_bytes: 0, storage_path: storagePath, text_content: "", source: "generated", updated_at: new Date().toISOString() }),
+      });
+      setNewPath("");
+      await loadFiles(false);
+      const rows = await request<StoredProjectFile[]>("project_files?select=id,project_id,file_path,file_name,mime_type,size_bytes,storage_path,text_content,source,updated_at&project_id=eq." + projectId + "&file_path=eq." + encodeURIComponent(path));
+      if (rows[0]) await openFile(rows[0]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create file.");
+    } finally { setCreatingFile(false); }
+  }
+
+  async function deleteSelectedFile() {
+    if (!selected || !window.confirm("Delete " + selected.file_path + " from this project? This cannot be undone.")) return;
+    setSaving(true); setError(null);
+    try {
+      if (selected.storage_path) await remove(selected.storage_path);
+      await request("project_files?id=eq." + selected.id, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      setSelected(null); setContent(""); setOriginal("");
+      await loadFiles(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete file.");
+    } finally { setSaving(false); }
+  }
+
+  function downloadCurrent() {
+    if (!selected) return;
+    if (selected.storage_path && !isEditableText(selected.mime_type)) {
+      void download(selected.storage_path).then(blob => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a"); anchor.href = url; anchor.download = selected.file_name; anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }).catch(cause => setError(cause instanceof Error ? cause.message : "Download failed."));
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([content], { type: selected.mime_type || "text/plain" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = selected.file_name;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function downloadZip() {
+    if (zipBusy || files.length === 0) return;
+    setZipBusy(true); setError(null);
+    try {
+      const entries = [];
+      let total = 0;
+      for (const file of files) {
+        let bytes: Uint8Array;
+        if (file.storage_path) bytes = new Uint8Array(await (await download(file.storage_path)).arrayBuffer());
+        else if (file.text_content !== null) bytes = new TextEncoder().encode(file.text_content);
+        else continue;
+        total += bytes.byteLength;
+        if (total > 100 * 1024 * 1024) throw new Error("The project export exceeds 100 MB. Download selected files individually.");
+        entries.push({ name: file.file_path, bytes });
+      }
+      if (!entries.length) throw new Error("No stored project files were found to export.");
+      const blob = createZip(entries);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = "figurable-project-" + projectId.slice(0, 8) + ".zip"; anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create ZIP export.");
+    } finally { setZipBusy(false); }
+  }
+
+  const visible = files.filter(file => file.file_path.toLowerCase().includes(query.toLowerCase()));
+  return <div className="code-surface"><aside className="code-tree"><div className="code-search"><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project files"/><ChevronDown size={13}/></div><div className="tree-root"><ChevronDown size={13}/><Folder size={14}/><b>Project files</b></div><div className="flex gap-1 px-2 py-2"><input aria-label="New file path" value={newPath} onChange={event => setNewPath(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void createFile(); }} placeholder="src/new-file.tsx" className="min-w-0 flex-1 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] outline-none focus:border-blue-500"/><Button variant="outline" size="icon-sm" disabled={creatingFile || !newPath.trim()} onClick={() => void createFile()} aria-label="Create file" title="Create file"><Plus size={13}/></Button></div>{loading && <p className="px-3 py-4 text-xs text-zinc-500">Loading files…</p>}{!loading && visible.length === 0 && <p className="px-3 py-4 text-xs text-zinc-500">No files uploaded or generated yet.</p>}{visible.map(file => <Button variant={selected?.id === file.id ? "editorActive" : "ghost"} size="sm" className="tree-file" key={file.id} onClick={() => void openFile(file)}><File size={13}/><span>{file.file_path}</span></Button>)}<Button variant="outline" size="sm" className="download-code" disabled={!selected} onClick={downloadCurrent}><Download size={13}/> Download file</Button><Button variant="outline" size="sm" className="download-code" disabled={zipBusy || files.length === 0} onClick={() => void downloadZip()}><Download size={13}/>{zipBusy ? "Preparing ZIP…" : "Download ZIP"}</Button></aside><main className="code-editor"><div className="code-editor-head"><span>{selected?.file_path ?? "No file selected"} <small>{selected?.mime_type ?? ""}</small></span><div><Button variant="ghost" size="icon-sm" title="Download file" disabled={!selected} onClick={downloadCurrent}><Download size={13}/></Button><Button variant="outline" size="sm" disabled={!selected || saving} onClick={() => void deleteSelectedFile()}><Trash2 size={13}/> Delete</Button><Button variant="editorActive" size="sm" disabled={!selected || !isEditableText(selected.mime_type) || content === original || saving} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save file"}</Button></div></div>{error && <p role="alert" className="m-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{selected && isEditableText(selected.mime_type) ? <textarea aria-label={"Edit " + selected.file_path} spellCheck={false} value={content} onChange={event => setContent(event.target.value)} className="min-h-[65vh] w-full resize-none bg-white p-4 font-mono text-xs leading-6 text-zinc-800 outline-none" /> : selected ? <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">This is a binary file. Use Download file to retrieve the original bytes without corruption.</div> : <div className="grid min-h-[65vh] place-items-center p-8 text-center text-sm text-zinc-500">Select a file to inspect or edit its saved contents.</div>}<div className="read-only-note"><Lock size={12}/> {selected ? (content === original ? "Saved version" : "Unsaved changes") : "Private project storage"}</div></main></div>;
 }
 
-function FilesSurface() {
+function FilesSurface({ projectId }: { projectId: string }) {
+  const { session, request, upload, download } = useBackend();
+  const [files, setFiles] = useState<StoredProjectFile[]>([]);
   const [query, setQuery] = useState("");
-  const files = ["Launch brief.pdf", "Audience research.csv", "Brand direction.md", "Orbit logo.png"];
-  return <div className="full-surface"><SurfaceTitle title="Files" detail="Project documents and generated deliverables"/><div className="files-toolbar"><label><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files"/></label><Button variant="editorActive" size="sm"><Plus size={13}/> Upload file</Button></div><div className="files-grid">{files.filter((file) => file.toLowerCase().includes(query.toLowerCase())).map((file, index) => <article key={file}><span><FileText size={19}/></span><div><b>{file}</b><small>{index % 2 ? "Generated by Lovable" : "Uploaded today"}</small></div><Button variant="ghost" size="icon-sm"><MoreHorizontal size={14}/></Button></article>)}</div></div>;
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadFiles() {
+    setLoading(true);
+    try {
+      const rows = await request<StoredProjectFile[]>("project_files?select=id,project_id,file_path,file_name,mime_type,size_bytes,storage_path,text_content,source,updated_at&project_id=eq." + projectId + "&order=created_at.desc");
+      setFiles(rows);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load files.");
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { void loadFiles(); }, [projectId]);
+
+  async function handleUpload(file?: File) {
+    if (!file || !session) return;
+    const safeName = file.name.replace(/[\\\\/]+/g, "-").replace(/\\.\\.+/g, "-").slice(0, 180);
+    const path = projectId + "/" + safeName;
+    setUploading(true);
+    setError(null);
+    try {
+      await upload(path, file);
+      const text = file.size <= 100000 && (file.type.startsWith("text/") || /json|javascript|xml|svg/.test(file.type)) ? await file.text() : null;
+      await request("project_files?on_conflict=project_id,file_path", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ project_id: projectId, file_path: safeName, file_name: file.name, mime_type: file.type || "application/octet-stream", size_bytes: file.size, storage_path: path, text_content: text, source: "upload", uploaded_by: session.user.id, updated_at: new Date().toISOString() }),
+      });
+      await loadFiles();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Upload failed.");
+    } finally { setUploading(false); }
+  }
+
+  async function downloadFile(file: StoredProjectFile) {
+    if (!file.storage_path) return;
+    try {
+      const blob = await download(file.storage_path);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = file.file_name; anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Download failed."); }
+  }
+
+  const visible = files.filter(file => (file.file_name + " " + file.file_path).toLowerCase().includes(query.toLowerCase()));
+  return <div className="full-surface"><SurfaceTitle title="Files" detail="Files stored privately for this project"/><div className="files-toolbar"><label><Search size={13}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files"/></label><label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-blue-600 px-3 py-2 text-xs font-medium text-white">{uploading ? "Uploading…" : <><Plus size={13}/> Upload file</>}<input className="sr-only" type="file" disabled={uploading} onChange={event => { void handleUpload(event.target.files?.[0]); event.currentTarget.value = ""; }}/></label></div>{error && <p role="alert" className="m-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{loading ? <p className="p-8 text-center text-sm text-zinc-500">Loading files…</p> : <div className="files-grid">{visible.map(file => <article key={file.id}><span><FileText size={19}/></span><div><b>{file.file_name}</b><small>{file.mime_type} · {(file.size_bytes / 1024).toFixed(1)} KB · {file.source}</small></div><Button variant="ghost" size="icon-sm" aria-label={"Download " + file.file_name} onClick={() => void downloadFile(file)}><Download size={14}/></Button></article>)}{visible.length === 0 && <p className="p-8 text-center text-sm text-zinc-500">No project files yet. Upload a file or run Build mode.</p>}</div>}</div>;
 }
 
 function HistorySurface({ onBack, versions, onPreviewVersion }: { onBack: () => void; versions: { id: number; text: string }[]; onPreviewVersion: (id: number) => void }) {
-  const [tab, setTab] = useState("History"); const [bookmarks, setBookmarks] = useState<number[]>([]);
-  return <div className="history-surface"><SurfaceTitle title="History" detail="Local project snapshots" onBack={onBack}/><div className="history-tabs">{["History", "Bookmarks"].map(item => <Button key={item} variant={tab === item ? "editorActive" : "ghost"} size="sm" onClick={() => setTab(item)}>{item}</Button>)}</div><div className="history-list">{[...versions].reverse().filter(version => tab === "History" || bookmarks.includes(version.id)).map((version, index) => <div className="history-entry" key={version.id}><Button variant="ghost" onClick={() => onPreviewVersion(version.id)}><span><b>{version.text}</b><small>{index === 0 ? "Latest snapshot" : "Previous snapshot"}</small></span><ChevronRight size={13}/></Button><Button variant={bookmarks.includes(version.id) ? "editorActive" : "outline"} size="icon-sm" aria-label={`Bookmark turn ${version.id}`} onClick={() => setBookmarks(bookmarks.includes(version.id) ? bookmarks.filter(id => id !== version.id) : [...bookmarks, version.id])}><Check size={13}/></Button></div>)}{tab === "Bookmarks" && !bookmarks.length && <div className="empty-state"><HistoryIcon size={22}/><b>No bookmarks yet</b></div>}</div></div>;
+  const savedVersions = [...versions].reverse();
+  return <div className="history-surface"><SurfaceTitle title="History" detail="Saved build previews" onBack={onBack}/><div className="history-list">{savedVersions.map((version, index) => <div className="history-entry" key={version.id}><Button variant="ghost" onClick={() => onPreviewVersion(version.id)}><span><b>{version.text}</b><small>{index === 0 ? "Most recent saved preview" : "Saved preview checkpoint"}</small></span><ChevronRight size={13}/></Button></div>)}{savedVersions.length === 0 && <div className="empty-state"><HistoryIcon size={22}/><b>No saved previews yet</b><p>Completed builds that produce preview HTML appear here.</p></div>}</div></div>;
 }
 
-function MoreSurface({ surface, onBack, onSelectSurface, enabledSkills, setEnabledSkills }: { surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
+function MoreSurface({ projectId, surface, onBack, onSelectSurface, enabledSkills, setEnabledSkills }: { projectId: string; surface: Surface; onBack: () => void; onSelectSurface: (surface: Surface) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
   const safeSurface = moreNav.some((item) => item.value === surface) ? surface : "settings";
-  return <div className="more-surface"><aside className="more-sidebar">{moreNav.map(({ label, value, icon: Icon }) => <Button key={value} aria-label={label} title={label} variant={safeSurface === value ? "editorActive" : "ghost"} size="sm" onClick={() => onSelectSurface(value)}><Icon size={14}/><span>{label}</span></Button>)}</aside><section className="more-content"><SurfaceTitle title={safeSurface === "settings" ? "Project settings" : moreNav.find((item) => item.value === safeSurface)?.label ?? "More"} onBack={onBack}/>{safeSurface === "settings" ? <SettingsSurface enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills}/> : safeSurface === "cloud" ? <CloudResources/> : safeSurface === "analytics" ? <AnalyticsExpanded/> : safeSurface === "security" ? <SecurityAudit/> : safeSurface === "payments" ? <PaymentsSurface/> : safeSurface === "agents" ? <AgentIntegrationsSurface/> : <FeatureSurface surface={safeSurface}/>}</section></div>;
+  return <div className="more-surface"><aside className="more-sidebar">{moreNav.map(({ label, value, icon: Icon }) => <Button key={value} aria-label={label} title={label} variant={safeSurface === value ? "editorActive" : "ghost"} size="sm" onClick={() => onSelectSurface(value)}><Icon size={14}/><span>{label}</span></Button>)}</aside><section className="more-content"><SurfaceTitle title={safeSurface === "settings" ? "Project settings" : moreNav.find((item) => item.value === safeSurface)?.label ?? "More"} onBack={onBack}/>{safeSurface === "settings" ? <SettingsSurface projectId={projectId} onSelectSurface={onSelectSurface} enabledSkills={enabledSkills} setEnabledSkills={setEnabledSkills}/> : safeSurface === "cloud" ? <CloudResources/> : safeSurface === "analytics" ? <AnalyticsExpanded/> : safeSurface === "security" ? <SecurityAudit/> : safeSurface === "payments" ? <PaymentsSurface/> : safeSurface === "agents" ? <AgentIntegrationsSurface/> : <FeatureSurface surface={safeSurface} projectId={projectId}/>}</section></div>;
 }
 
-function SettingsSurface({ enabledSkills, setEnabledSkills }: { enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
+function SettingsSurface({ projectId, onSelectSurface, enabledSkills, setEnabledSkills }: { projectId: string; onSelectSurface: (surface: Surface) => void; enabledSkills: string[]; setEnabledSkills: (items: string[]) => void }) {
+  const { session, request } = useBackend();
   const [tab, setTab] = useState("General");
-  const [monitoring, setMonitoring] = useState(true);
-  const [livePreview, setLivePreview] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState("Synced 4 minutes ago");
-  const syncGit = () => { setSyncing(true); window.setTimeout(() => { setSyncing(false); setLastSync("Synced just now"); }, 650); };
-  return <div className="settings-layout"><nav>{["General","Knowledge","Domains","Git","Skills"].map((item) => <Button key={item} variant={tab === item ? "editorActive" : "ghost"} size="sm" onClick={() => setTab(item)}>{item}</Button>)}</nav><div className="settings-scroll">{tab === "Skills" && <SkillsManager enabled={enabledSkills} onChange={setEnabledSkills}/>} {tab === "General" && <><div className="project-identity"><span className="project-symbol">O</span><div><h3>Orbit Finance</h3><p>Owned by Nathan's workspace · Created Sep 5, 2026</p></div></div><SettingsSection title="Project details"><DataRow label="Project name" value="Orbit Finance" action="Edit"/><DataRow label="URL subdomain" value="orbit-finance"/><DataRow label="Owner" value="Nathan Hanry"/><DataRow label="Messages count" value="10"/><DataRow label="AI edits count" value="6"/></SettingsSection><SettingsSection title="Project monitoring"><ToggleRow label="Project monitoring" detail="Regularly checks your project for issues and improvements." value={monitoring} setValue={setMonitoring}/></SettingsSection><SettingsSection title="Preview"><ToggleRow label="Live preview" detail="Show changes while Lovable is building." value={livePreview} setValue={setLivePreview}/></SettingsSection><SettingsSection title="Publishing"><DataRow label="Project category" value="Finance" action="Change"/><ToggleRow label="Visitor analytics" detail="Measure visits to the published app." value={true} setValue={() => undefined}/></SettingsSection></>}{tab === "Knowledge" && <SettingsSection title="Project knowledge"><label className="settings-field">Instructions<textarea defaultValue="Keep the interface calm, clear, and accessible."/></label><Button variant="editorActive" size="sm"><Plus size={13}/> Add knowledge</Button></SettingsSection>}{tab === "Domains" && <SettingsSection title="Domains"><p className="section-description">Connect a custom domain to your published project.</p><label className="settings-field">Domain<input placeholder="app.example.com"/></label><Button variant="editorActive" size="sm">Connect domain</Button></SettingsSection>}{tab === "Git" && <><SettingsSection title="Git"><div className="git-card"><div><Code2 size={17}/><span><b>GitHub repository</b><small>nathan/orbit-finance · main</small></span></div><span className="connection-state"><CheckCircle2 size={13}/> Connected</span></div><div className="git-details"><div><GitBranch size={14}/><span><b>main</b><small>Default branch · Protected</small></span><Button variant="outline" size="sm">Change</Button></div><div><Activity size={14}/><span><b>{lastSync}</b><small>Latest project changes are mirrored automatically.</small></span><Button variant="editorActive" size="sm" onClick={syncGit}>{syncing ? "Syncing…" : "Sync now"}</Button></div></div></SettingsSection><SettingsSection title="Repository actions"><div className="git-actions"><Button variant="outline" size="sm"><ExternalLink size={13}/> Open on GitHub</Button><Button variant="outline" size="sm"><GitBranch size={13}/> Create branch</Button></div></SettingsSection></>}</div></div>;
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [knowledge, setKnowledge] = useState<Array<{ id: string; title: string; content: string; created_at: string }>>([]);
+  const [knowledgeTitle, setKnowledgeTitle] = useState("");
+  const [knowledgeContent, setKnowledgeContent] = useState("");
+  const [github, setGithub] = useState<{ repository_owner: string; repository_name: string; default_branch: string; auto_push_enabled: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProject() {
+      try {
+        const rows = await request<Array<{ name: string; description: string; instructions: string }>>("projects?select=name,description,instructions&id=eq." + projectId);
+        if (!rows[0]) throw new Error("Project not found or access was removed.");
+        if (!cancelled) {
+          setName(rows[0].name); setDescription(rows[0].description ?? ""); setInstructions(rows[0].instructions ?? "");
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load project settings.");
+      } finally { if (!cancelled) setLoading(false); }
+    }
+    void loadProject();
+    return () => { cancelled = true; };
+  }, [projectId, request]);
+
+  useEffect(() => {
+    if (tab !== "Knowledge" && tab !== "Git") return;
+    let cancelled = false;
+    async function loadTab() {
+      try {
+        if (tab === "Knowledge") {
+          const rows = await request<Array<{ id: string; title: string; content: string; created_at: string }>>("project_knowledge?select=id,title,content,created_at&project_id=eq." + projectId + "&order=created_at.desc");
+          if (!cancelled) setKnowledge(rows);
+        } else {
+          const rows = await request<Array<{ repository_owner: string; repository_name: string; default_branch: string; auto_push_enabled: boolean }>>("github_integrations?select=repository_owner,repository_name,default_branch,auto_push_enabled&project_id=eq." + projectId);
+          if (!cancelled) setGithub(rows[0] ?? null);
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load this settings section.");
+      }
+    }
+    void loadTab();
+    return () => { cancelled = true; };
+  }, [tab, projectId, request]);
+
+  async function saveProject() {
+    setSaving(true); setError(null); setNotice("");
+    try {
+      await request("projects?id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ name: name.trim(), description, instructions, updated_at: new Date().toISOString() }) });
+      setNotice("Project details and instructions saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save project settings.");
+    } finally { setSaving(false); }
+  }
+
+  async function addKnowledge() {
+    if (!knowledgeTitle.trim() || !knowledgeContent.trim() || !session) return;
+    setSaving(true); setError(null); setNotice("");
+    try {
+      await request("project_knowledge", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ project_id: projectId, title: knowledgeTitle.trim(), content: knowledgeContent.trim(), created_by: session.user.id }) });
+      setKnowledgeTitle(""); setKnowledgeContent("");
+      const rows = await request<Array<{ id: string; title: string; content: string; created_at: string }>>("project_knowledge?select=id,title,content,created_at&project_id=eq." + projectId + "&order=created_at.desc");
+      setKnowledge(rows); setNotice("Knowledge saved to this project.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save project knowledge.");
+    } finally { setSaving(false); }
+  }
+
+  return <div className="settings-layout"><nav>{["General","Knowledge","Git","Skills"].map(item => <Button key={item} variant={tab === item ? "editorActive" : "ghost"} size="sm" onClick={() => setTab(item)}>{item}</Button>)}</nav><div className="settings-scroll">{loading ? <p className="p-5 text-sm text-zinc-500">Loading saved project settings…</p> : tab === "General" ? <><SettingsSection title="Project details"><label className="settings-field">Project name<input value={name} onChange={event => setName(event.target.value)} maxLength={120}/></label><label className="settings-field">Description<textarea value={description} onChange={event => setDescription(event.target.value)}/></label><Button variant="editorActive" size="sm" disabled={saving || !name.trim()} onClick={() => void saveProject()}>{saving ? "Saving…" : "Save project details"}</Button></SettingsSection><SettingsSection title="Persistent project instructions"><p className="section-description">These instructions are sent with every Build, Plan and Chat request for this project.</p><label className="settings-field">Project context<textarea value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Architecture, conventions, constraints, acceptance criteria, and things that must not change."/></label><Button variant="editorActive" size="sm" disabled={saving} onClick={() => void saveProject()}>{saving ? "Saving…" : "Save instructions"}</Button></SettingsSection></> : tab === "Knowledge" ? <><SettingsSection title="Project knowledge"><p className="section-description">Saved notes and scraped sources are retrieved as context by the agent.</p><label className="settings-field">Title<input value={knowledgeTitle} onChange={event => setKnowledgeTitle(event.target.value)} placeholder="Requirement, decision, or source title"/></label><label className="settings-field">Content<textarea value={knowledgeContent} onChange={event => setKnowledgeContent(event.target.value)} placeholder="Write the facts or constraints the agent should retain."/></label><Button variant="editorActive" size="sm" disabled={saving || !knowledgeTitle.trim() || !knowledgeContent.trim()} onClick={() => void addKnowledge()}>{saving ? "Saving…" : "Save knowledge"}</Button></SettingsSection><div className="mt-4 space-y-2">{knowledge.map(item => <article key={item.id} className="rounded-xl border border-zinc-200 bg-white p-3"><b className="text-sm">{item.title}</b><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-zinc-600">{item.content}</p><small className="mt-2 block text-[11px] text-zinc-400">{new Date(item.created_at).toLocaleString()}</small></article>)}{knowledge.length === 0 && <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500">No project knowledge saved yet.</p>}</div></> : tab === "Git" ? <SettingsSection title="GitHub connection">{github ? <><div className="git-card"><div><GitBranch size={17}/><span><b>{github.repository_owner}/{github.repository_name}</b><small>Branch: {github.default_branch}</small></span></div><span className={github.auto_push_enabled ? "status-good" : "status-muted"}>{github.auto_push_enabled ? "Auto-push enabled" : "Auto-push disabled"}</span></div><Button variant="editorActive" size="sm" onClick={() => onSelectSurface("connectors")}>Manage GitHub connection</Button></> : <><p className="section-description">No repository is connected to this project.</p><Button variant="editorActive" size="sm" onClick={() => onSelectSurface("connectors")}>Connect GitHub</Button></>}</SettingsSection> : <SkillsManager enabled={enabledSkills} onChange={setEnabledSkills}/>}</div>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-emerald-700">{notice}</p>}</div>;
 }
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="settings-section"><h3>{title}</h3><div>{children}</div></section>; }
-function DataRow({ label, value, action }: { label: string; value: string; action?: string }) { return <div className="data-row"><span>{label}</span><b>{value}</b>{action ? <Button variant="outline" size="sm">{action}</Button> : <span/>}</div>; }
-function ToggleRow({ label, detail, value, setValue }: { label: string; detail: string; value: boolean; setValue: (value: boolean) => void }) { return <div className="toggle-row"><div><b>{label}</b><p>{detail}</p></div><Button variant={value ? "editorActive" : "outline"} size="icon-sm" className={`editor-switch ${value ? "on" : ""}`} onClick={() => setValue(!value)} aria-label={`Toggle ${label}`}><i/></Button></div>; }
 
-function FeatureSurface({ surface }: { surface: Surface }) { const data = useMemo(() => ({ ai: ["AI usage", "Monitor models, request volume, and spend.", Sparkles], agents: ["Agent integrations", "Connect tools that extend your project agent.", Sparkles], payments: ["Payments", "Set up products, subscriptions, and checkout.", CreditCard], seo: ["SEO & AI search", "Review metadata, indexing, and accessibility.", Globe2], logs: ["Logs", "Inspect recent project activity.", Terminal] } as const), []); const item = data[surface as keyof typeof data] ?? ["Project tool", "Configure this project feature.", Settings] as const; const Icon = item[2]; if (surface === "seo") return <SeoSurface/>; if (surface === "ai") return <AiSurface/>; if (surface === "connectors") return <ConnectorsSurface/>; return <div className="feature-page"><div className="feature-empty"><span><Icon size={21}/></span><h3>{item[0]}</h3><p>{item[1]}</p><Button variant="editorActive" size="sm">Open setup</Button></div></div>; }
+function FeatureSurface({ surface, projectId }: { surface: Surface; projectId: string }) { const data = useMemo(() => ({ ai: ["AI usage", "Monitor models, request volume, and spend.", Sparkles], agents: ["Agent integrations", "Connect tools that extend your project agent.", Sparkles], payments: ["Payments", "Set up products, subscriptions, and checkout.", CreditCard], seo: ["SEO & AI search", "Review metadata, indexing, and accessibility.", Globe2], logs: ["Logs", "Inspect recent project activity.", Terminal] } as const), []); const item = data[surface as keyof typeof data] ?? ["Project tool", "Configure this project feature.", Settings] as const; const Icon = item[2]; if (surface === "seo") return <SeoSurface/>; if (surface === "ai") return <AiSurface projectId={projectId}/>; if (surface === "connectors") return <ConnectorsSurface projectId={projectId}/>; return <div className="feature-page"><div className="feature-empty"><span><Icon size={21}/></span><h3>{item[0]}</h3><p>{item[1]}</p><Button variant="editorActive" size="sm">Open setup</Button></div></div>; }
 
-function FirecrawlSurface() {
-  const [connected, setConnected] = useState(false);
-  const [url, setUrl] = useState("https://");
-  const [crawling, setCrawling] = useState(false);
-  const [lastResult, setLastResult] = useState("No crawl started yet");
-  const startCrawl = () => { if (!url.replace("https://", "").trim() || crawling) return; setCrawling(true); window.setTimeout(() => { setCrawling(false); setLastResult("12 pages extracted · Markdown ready"); }, 800); };
-  return <div className="feature-page connector-page"><div className="connector-hero"><div className="connector-icon firecrawl-icon"><Flame size={20}/></div><div><div className="feature-kicker">CONNECTOR <span className="connector-live">{connected ? "Connected" : "Not connected"}</span></div><h3>Firecrawl</h3><p>Turn websites into clean, agent-ready content for your project.</p></div><Button variant={connected ? "outline" : "editorActive"} size="sm" onClick={() => setConnected((value) => !value)}>{connected ? "Disconnect" : "Connect"}</Button></div><div className="connector-grid"><section className="connector-card"><div className="connector-card-head"><span><KeyRound size={15}/><b>API connection</b></span><span className={connected ? "status-good" : "status-muted"}>{connected ? "Ready" : "Needs setup"}</span></div><p>Use Firecrawl for crawl, scrape, and map actions from the agent.</p><label className="settings-field">API key<input type="password" placeholder={connected ? "••••••••••••••••" : "fc-..."}/></label><Button variant="outline" size="sm" onClick={() => setConnected(true)}><Check size={13}/> Save connection</Button></section><section className="connector-card"><div className="connector-card-head"><span><Globe2 size={15}/><b>Quick crawl</b></span><span className="status-muted">{lastResult}</span></div><p>Capture a site map and readable Markdown in one pass.</p><label className="settings-field">Website URL<input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com"/></label><div className="crawl-row"><Button variant="editorActive" size="sm" onClick={startCrawl}>{crawling ? "Crawling…" : "Start crawl"}</Button><Button variant="ghost" size="sm"><Settings size={13}/> Options</Button></div></section></div><div className="crawl-presets"><span><Activity size={14}/> 500 pages / month</span><span><CheckCircle2 size={14}/> Markdown extraction</span><span><ShieldCheck size={14}/> Private project data</span></div></div>;
+function FirecrawlSurface({ projectId }: { projectId: string }) {
+  const { request, invoke } = useBackend();
+  const [url, setUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [lastResult, setLastResult] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [sources, setSources] = useState<Array<{ id: string; title: string; content: string; created_at: string }>>([]);
+
+  async function loadSources() {
+    try {
+      const [rows, secrets] = await Promise.all([
+        request<Array<{ id: string; title: string; content: string; created_at: string }>>(
+          "project_knowledge?select=id,title,content,created_at&project_id=eq." + projectId + "&order=created_at.desc&limit=8"
+        ),
+        request<Array<{ secret_key: string }>>("project_secrets?select=secret_key&project_id=eq." + projectId + "&secret_key=eq.FIRECRAWL_API_KEY"),
+      ]);
+      setSources(rows);
+      setKeySaved(secrets.length > 0);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load saved project knowledge.");
+    }
+  }
+
+  useEffect(() => { void loadSources(); }, [projectId]);
+
+  async function saveKey() {
+    if (!apiKey.trim()) return;
+    setBusy(true); setError(null);
+    try {
+      await request("rpc/store_project_secret", { method: "POST", body: JSON.stringify({ p_project_id: projectId, p_secret_key: "FIRECRAWL_API_KEY", p_secret_value: apiKey.trim() }) });
+      setApiKey(""); setKeySaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save Firecrawl credential.");
+    } finally { setBusy(false); }
+  }
+
+  async function scrape() {
+    if (!url.trim() || busy) return;
+    setBusy(true); setError(null); setLastResult("");
+    try {
+      const result = await invoke<{ success: boolean; title: string; sourceUrl: string; characters: number; savedAt: string }>("figurable-scrape", { projectId, url: url.trim() });
+      setLastResult("Saved " + result.title + " · " + result.characters.toLocaleString() + " characters");
+      await loadSources();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Scrape failed.");
+    } finally { setBusy(false); }
+  }
+
+  return <div className="feature-page connector-page"><div className="connector-hero"><div className="connector-icon firecrawl-icon"><Flame size={20}/></div><div><div className="feature-kicker">CONNECTOR <span className="connector-live">Server-side</span></div><h3>Firecrawl</h3><p>Extract readable website content into this project's persistent knowledge.</p></div></div><div className="connector-grid"><section className="connector-card"><div className="connector-card-head"><span><KeyRound size={15}/><b>Encrypted API credential</b></span><span className={keySaved ? "status-good" : "status-muted"}>{keySaved ? "Saved" : "Not configured"}</span></div><p>The key is encrypted in Supabase Vault. It is never bundled into the browser app.</p><label className="settings-field">Firecrawl API key<input type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={keySaved ? "Enter a replacement key to rotate it" : "Paste API key"}/></label><Button variant="outline" size="sm" disabled={busy || !apiKey.trim()} onClick={() => void saveKey()}>{busy ? "Saving…" : keySaved ? "Replace encrypted key" : "Save encrypted key"}</Button></section><section className="connector-card"><div className="connector-card-head"><span><Globe2 size={15}/><b>Scrape a source</b></span></div><p>Fetch a public HTTPS page and save its Markdown so Build, Plan and Chat can use it as project context.</p><label className="settings-field">Website URL<input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/article"/></label><div className="crawl-row"><Button variant="editorActive" size="sm" disabled={busy || !url.trim() || !keySaved} onClick={() => void scrape()}>{busy ? "Working…" : "Scrape and save"}</Button></div>{lastResult && <p role="status" className="mt-3 text-xs text-emerald-700">{lastResult}</p>}</section></div>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}<section className="mt-5"><h3 className="mb-3 text-sm font-semibold text-zinc-900">Saved project sources</h3>{sources.length ? <div className="space-y-2">{sources.map(source => <article className="rounded-xl border border-zinc-200 bg-white p-3" key={source.id}><b className="text-sm">{source.title}</b><p className="mt-1 line-clamp-3 text-xs leading-5 text-zinc-500">{source.content}</p><small className="mt-2 block text-[11px] text-zinc-400">{new Date(source.created_at).toLocaleString()}</small></article>)}</div> : <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500">No sources saved to this project yet.</p>}</section></div>;
 }
 
-function ConnectorsSurface() { const [tab, setTab] = useState("Firecrawl"); return <div className="connectors-layout"><div className="feature-tabs">{["Firecrawl", "Supabase"].map(item => <Button variant={tab === item ? "editorActive" : "ghost"} size="sm" key={item} onClick={() => setTab(item)}>{item}</Button>)}</div>{tab === "Firecrawl" ? <FirecrawlSurface/> : <SupabaseSetup/>}</div>; }
+function GitHubConnectorSurface({ projectId }: { projectId: string }) {
+  const { session, request, invoke } = useBackend();
+  const [owner, setOwner] = useState("");
+  const [repo, setRepo] = useState("");
+  const [branch, setBranch] = useState("main");
+  const [token, setToken] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
+  const [autoPush, setAutoPush] = useState(true);
+  const [account, setAccount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [connections, secrets] = await Promise.all([
+          request<Array<{ repository_owner: string; repository_name: string; default_branch: string; account_label: string; auto_push_enabled: boolean }>>("github_integrations?select=repository_owner,repository_name,default_branch,account_label,auto_push_enabled&project_id=eq." + projectId),
+          request<Array<{ vault_secret_id: string }>>("project_secrets?select=vault_secret_id&project_id=eq." + projectId + "&secret_key=eq.GITHUB_TOKEN"),
+        ]);
+        if (cancelled) return;
+        if (connections[0]) {
+          setOwner(connections[0].repository_owner); setRepo(connections[0].repository_name);
+          setBranch(connections[0].default_branch); setAccount(connections[0].account_label);
+          setAutoPush(connections[0].auto_push_enabled); setStatus("Repository connected");
+        }
+        setKeySaved(secrets.length > 0);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load GitHub settings.");
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, request]);
+
+  async function saveConnection() {
+    if (!owner.trim() || !repo.trim() || busy || !session) return;
+    setBusy(true); setError(null); setStatus("");
+    try {
+      if (token.trim()) {
+        await request("rpc/store_project_secret", { method: "POST", body: JSON.stringify({ p_project_id: projectId, p_secret_key: "GITHUB_TOKEN", p_secret_value: token.trim() }) });
+        setToken(""); setKeySaved(true);
+      }
+      if (!keySaved && !token.trim()) throw new Error("Paste a GitHub token with repository Contents read/write access.");
+      const verified = await invoke<{ success: boolean; account: string; repository: string; defaultBranch: string }>("figurable-github", { projectId, owner: owner.trim(), repo: repo.trim(), branch: branch.trim() });
+      const secrets = await request<Array<{ vault_secret_id: string }>>("project_secrets?select=vault_secret_id&project_id=eq." + projectId + "&secret_key=eq.GITHUB_TOKEN");
+      if (!secrets[0]) throw new Error("The encrypted GitHub token reference could not be found.");
+      await request("github_integrations?on_conflict=project_id", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ project_id: projectId, account_label: verified.account, repository_owner: owner.trim(), repository_name: repo.trim(), default_branch: verified.defaultBranch || branch.trim() || "main", token_secret_id: secrets[0].vault_secret_id, auto_push_enabled: autoPush, created_by: session.user.id, updated_at: new Date().toISOString(), last_tested_at: new Date().toISOString(), last_sync_status: "Connection verified" }),
+      });
+      await request("projects?id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ github_repo: owner.trim() + "/" + repo.trim(), github_branch: verified.defaultBranch || branch.trim() || "main", updated_at: new Date().toISOString() }) });
+      setAccount(verified.account); setBranch(verified.defaultBranch || branch); setStatus("Connected to " + verified.repository);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "GitHub connection failed.");
+    } finally { setBusy(false); }
+  }
+
+  async function syncFiles() {
+    if (busy || !status.startsWith("Connected")) return;
+    setBusy(true); setError(null);
+    try {
+      const result = await invoke<{ success: boolean; repository: string; branch: string; synced: number; totalBytes: number; warnings: string[] }>("figurable-github", { projectId, action: "sync" });
+      setStatus("Connected · synced " + result.synced + " files");
+      if (result.warnings?.length) setError("Some files were skipped: " + result.warnings.slice(0, 5).join("; "));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "GitHub sync failed.");
+    } finally { setBusy(false); }
+  }
+
+  async function disconnect() {
+    setBusy(true); setError(null);
+    try {
+      await request("github_integrations?project_id=eq." + projectId, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      await request("project_secrets?project_id=eq." + projectId + "&secret_key=eq.GITHUB_TOKEN", { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      await request("projects?id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ github_repo: null, updated_at: new Date().toISOString() }) });
+      setKeySaved(false); setStatus("GitHub disconnected"); setAccount("");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not disconnect GitHub."); }
+    finally { setBusy(false); }
+  }
+
+  async function saveAutoPush(value: boolean) {
+    setAutoPush(value);
+    try {
+      await request("github_integrations?project_id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ auto_push_enabled: value, updated_at: new Date().toISOString() }) });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update auto-push."); }
+  }
+
+  return <div className="expanded-page"><div className="connector-hero"><span className="connector-icon"><GitBranch size={22}/></span><div><h3>GitHub</h3><p>Connect this project to a repository and optionally push each successful Build.</p></div><Button variant="outline" size="sm" disabled={busy || !status.startsWith("Connected")} onClick={() => void disconnect()}>Disconnect</Button></div><div className="setup-form"><label className="settings-field">Repository owner<input value={owner} onChange={event => setOwner(event.target.value)} placeholder="username or organisation"/></label><label className="settings-field">Repository name<input value={repo} onChange={event => setRepo(event.target.value)} placeholder="repository-name"/></label><label className="settings-field">Branch<input value={branch} onChange={event => setBranch(event.target.value)} placeholder="main"/></label><label className="settings-field">Personal access token<input type="password" autoComplete="off" value={token} onChange={event => setToken(event.target.value)} placeholder={keySaved ? "Saved in encrypted Vault · enter to rotate" : "Paste token with Contents read/write permission"}/></label></div><div className="local-notice">The token is encrypted in Supabase Vault. It is never returned to the browser after saving.</div><label className="mt-4 flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm"><input type="checkbox" checked={autoPush} onChange={event => void saveAutoPush(event.target.checked)} disabled={!status.startsWith("Connected")}/><span><b>Push successful Build changes automatically</b><small className="mt-1 block text-xs leading-5 text-zinc-500">Figurable commits generated files to the selected branch. Review repository permissions before enabling this.</small></span></label><div className="context-actions"><Button variant="editorActive" size="sm" disabled={busy || !owner.trim() || !repo.trim()} onClick={() => void saveConnection()}>{busy ? "Connecting…" : "Save and test connection"}</Button><Button variant="outline" size="sm" disabled={busy || !status.startsWith("Connected")} onClick={() => void syncFiles()}>{busy ? "Working…" : "Sync repository files"}</Button><span role="status" className={status.startsWith("Connected") ? "status-good" : "status-muted"}>{status || (keySaved ? "Token saved · repository not verified" : "Not connected")}</span></div>{account && <p className="mt-3 text-xs text-zinc-500">Authenticated GitHub account: {account}</p>}{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}</div>;
+}
+
+function ConnectorsSurface({ projectId }: { projectId: string }) {
+  const [tab, setTab] = useState("GitHub");
+  return <div className="connectors-layout"><div className="feature-tabs">{["GitHub", "Firecrawl", "Supabase"].map(item => <Button variant={tab === item ? "editorActive" : "ghost"} size="sm" key={item} onClick={() => setTab(item)}>{item}</Button>)}</div>{tab === "GitHub" ? <GitHubConnectorSurface projectId={projectId}/> : tab === "Firecrawl" ? <FirecrawlSurface projectId={projectId}/> : <SupabaseSetup projectId={projectId}/>}</div>;
+}

@@ -1,24 +1,193 @@
 import { Activity, Check, Database, Eye, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { skills } from '@/lib/mock-data';
+import { useBackend } from '@/lib/backend';
 
-export function SupabaseSetup() {
-  const [mode, setMode] = useState('Custom Supabase'); const [url, setUrl] = useState(''); const [anon, setAnon] = useState(''); const [role, setRole] = useState(''); const [visible, setVisible] = useState(false); const [status, setStatus] = useState('Not tested'); const [connected, setConnected] = useState(false);
-  function test() { if (mode === 'Custom Supabase') { try { const parsed = new URL(url); if (parsed.protocol !== 'https:' || !anon || !role) { setStatus('Enter an HTTPS project URL and both demo keys.'); return; } } catch { setStatus('Enter a valid HTTPS project URL.'); return; } } setStatus('Demo connection passed'); setConnected(true); setRole(''); setAnon(''); }
-  return <div className="expanded-page"><div className="connector-hero"><span className="connector-icon"><Database size={22}/></span><div><h3>Supabase</h3><p>Postgres · Auth · Storage · Functions</p></div><Button variant="outline" size="sm" onClick={() => { setConnected(false); setStatus('Disconnected'); }}>Disconnect</Button></div><div className="feature-tabs">{['Lovable Cloud', 'Custom Supabase'].map(item => <Button key={item} size="sm" variant={mode === item ? 'editorActive' : 'ghost'} onClick={() => { setMode(item); setConnected(false); setStatus('Not tested'); }}>{item}</Button>)}</div><div className="local-notice">Simulation only — use sample keys. No credentials are saved and no provider is contacted.</div>{mode === 'Custom Supabase' ? <div className="setup-form"><label className="settings-field">Project URL<input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://xyzcompany.supabase.co"/></label><label className="settings-field">Anon public key<input type="password" autoComplete="off" value={anon} onChange={e => setAnon(e.target.value)} placeholder="Sample public key"/></label><label className="settings-field">Service role key<div className="secret-input"><input type={visible ? 'text' : 'password'} autoComplete="off" value={role} onChange={e => setRole(e.target.value)} placeholder="Sample private key"/><Button variant="ghost" size="icon-sm" aria-label="Toggle service key visibility" onClick={() => setVisible(!visible)}><Eye size={13}/></Button></div></label></div> : <div className="managed-resources"><Database size={28}/><h3>Managed project</h3><p>Database, users, storage, and functions</p></div>}<div className="context-actions"><Button variant="editorActive" size="sm" onClick={test}><Check size={13}/>Test connection</Button><span role="status" className={connected ? 'status-good' : 'status-muted'}>{status}</span></div>{connected && <div className="schema-state"><b>Demo schema</b><span>auth.users</span><span>public.tables</span><Button variant="outline" size="sm" onClick={() => setStatus('Demo schema synchronized just now')}><RefreshCw size={13}/>Sync schema</Button></div>}</div>;
+type SupabaseConnectorRecord = { id: string; project_id: string; organization_label: string; project_url: string; anon_key: string; schema_snapshot: { tables?: string[]; paths?: string[]; synced_at?: string }; last_tested_at: string | null; last_test_status: string | null; is_active: boolean };
+
+export function SupabaseSetup({ projectId }: { projectId: string }) {
+  const { session, request } = useBackend();
+  const [url, setUrl] = useState("");
+  const [anon, setAnon] = useState("");
+  const [status, setStatus] = useState("No connection saved");
+  const [connected, setConnected] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [schema, setSchema] = useState<SupabaseConnectorRecord["schema_snapshot"] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const rows = await request<SupabaseConnectorRecord[]>("supabase_connectors?select=id,project_id,organization_label,project_url,anon_key,schema_snapshot,last_tested_at,last_test_status,is_active&project_id=eq." + projectId);
+        if (!cancelled && rows[0]) {
+          setUrl(rows[0].project_url);
+          setAnon(rows[0].anon_key);
+          setSchema(rows[0].schema_snapshot);
+          setConnected(rows[0].is_active);
+          setStatus(rows[0].last_test_status ?? "Saved connection");
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load connector settings.");
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, request]);
+
+  async function testConnection() {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".supabase.co") || parsed.pathname !== "/" && parsed.pathname !== "") throw new Error("Use the HTTPS project URL from Supabase, without a REST path.");
+    if (!anon.trim()) throw new Error("Enter the project's publishable/anon key. Do not enter a service-role key here.");
+    const response = await fetch(parsed.origin + "/rest/v1/", { headers: { apikey: anon.trim(), Authorization: "Bearer " + anon.trim() } });
+    const spec = await response.json().catch(() => ({})) as { paths?: Record<string, unknown>; info?: { title?: string } };
+    if (!response.ok) throw new Error("Supabase connection failed with HTTP " + response.status + ". Check the project URL, public key, and API availability.");
+    const paths = Object.keys(spec.paths ?? {}).filter(path => path !== "/" && !path.startsWith("/rpc/"));
+    const tables = paths.map(path => path.replace(/^\/|\/$/g, "")).filter(Boolean);
+    const snapshot = { tables, paths, synced_at: new Date().toISOString(), api_title: spec.info?.title ?? null };
+    setSchema(snapshot);
+    setConnected(true);
+    setStatus("Connection verified · " + tables.length + " REST resources");
+    return { origin: parsed.origin, snapshot };
+  }
+
+  async function saveAndSync() {
+    setBusy(true);
+    setError(null);
+    try {
+      const checked = await testConnection();
+      if (!session) throw new Error("Sign in before saving a connector.");
+      const hostLabel = new URL(checked.origin).hostname.split(".")[0];
+      await request("supabase_connectors?on_conflict=project_id", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          project_id: projectId, organization_label: hostLabel, project_url: checked.origin,
+          anon_key: anon.trim(), schema_snapshot: checked.snapshot, last_tested_at: new Date().toISOString(),
+          last_test_status: "Connection verified", is_active: true, created_by: session.user.id, updated_at: new Date().toISOString(),
+        }),
+      });
+      setStatus("Connection and schema snapshot saved");
+    } catch (cause) {
+      setConnected(false);
+      setError(cause instanceof Error ? cause.message : "Could not connect to Supabase.");
+    } finally { setBusy(false); }
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    setError(null);
+    try {
+      await request("supabase_connectors?project_id=eq." + projectId, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      setUrl(""); setAnon(""); setSchema(null); setConnected(false); setStatus("Connection removed");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove connector.");
+    } finally { setBusy(false); }
+  }
+
+  return <div className="expanded-page"><div className="connector-hero"><span className="connector-icon"><Database size={22}/></span><div><h3>Supabase</h3><p>Bring your own Postgres, Auth, Storage and Functions project</p></div><Button variant="outline" size="sm" disabled={busy || !connected} onClick={() => void disconnect()}>Disconnect</Button></div><div className="local-notice">Only the publishable/anon key is stored. Service-role keys must never be entered into the browser or exposed in client code.</div><div className="setup-form"><label className="settings-field">Project URL<input autoComplete="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://your-project.supabase.co"/></label><label className="settings-field">Publishable / anon key<input type="password" autoComplete="off" value={anon} onChange={event => setAnon(event.target.value)} placeholder="Public project key"/></label></div><div className="context-actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => { setBusy(true); setError(null); void testConnection().catch(cause => { setConnected(false); setError(cause instanceof Error ? cause.message : "Connection failed."); }).finally(() => setBusy(false)); }}><Check size={13}/>{busy ? "Checking…" : "Test connection"}</Button><Button variant="editorActive" size="sm" disabled={busy} onClick={() => void saveAndSync()}><RefreshCw size={13}/>{busy ? "Saving…" : "Save & sync schema"}</Button><span role="status" className={connected ? "status-good" : "status-muted"}>{status}</span></div>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{schema && <div className="schema-state"><b>Live REST resources · {schema.tables?.length ?? 0}</b>{(schema.tables ?? []).slice(0, 30).map(table => <span key={table}><Check size={12}/>{table}</span>)}<small>Last schema test: {schema.synced_at ? new Date(schema.synced_at).toLocaleString() : "Not recorded"}</small></div>}</div>;
 }
+type WorkspaceSkill = { id: string; workspace_id: string; name: string; command: string; description: string; instructions: string; is_enabled: boolean; version: number };
+
 export function SkillsManager({ enabled, onChange }: { enabled: string[]; onChange: (items: string[]) => void }) {
-  const [editing, setEditing] = useState<string | null>(null); const [prompts, setPrompts] = useState<Record<string, string>>({}); const [notice, setNotice] = useState('');
-  return <div className="expanded-page"><h3>Active skills</h3><div className="skills-grid">{skills.filter(skill => !skill.draft).map((skill, index) => <article className="skill-card" key={skill.command}><header><b>{skill.title}</b><span>{index % 2 ? 'Project' : 'Workspace'}</span></header><code>{skill.command}</code><p>{skill.detail}</p><div className="context-actions"><Button role="switch" aria-checked={enabled.includes(skill.command)} aria-label={`Enable ${skill.title}`} variant={enabled.includes(skill.command) ? 'editorActive' : 'outline'} size="sm" onClick={() => onChange(enabled.includes(skill.command) ? enabled.filter(item => item !== skill.command) : [...enabled, skill.command])}>{enabled.includes(skill.command) ? 'Active' : 'Disabled'}</Button><Button size="sm" variant="ghost" onClick={() => setEditing(editing === skill.command ? null : skill.command)}>Edit prompt</Button></div>{editing === skill.command && <label className="settings-field">Instructions<textarea value={prompts[skill.command] ?? skill.detail} onChange={e => setPrompts({ ...prompts, [skill.command]: e.target.value })}/><Button variant="outline" size="sm" onClick={() => { setEditing(null); setNotice('Skill instructions saved for this session.'); }}>Save prompt</Button></label>}</article>)}</div><h3>Draft skills</h3><article className="skill-card"><header><b>Release review</b><span>Project · {enabled.includes('/release-review') ? 'Active' : 'Draft'}</span></header><code>/release-review</code><p>Review the release checklist before publication.</p><Button variant="outline" size="sm" onClick={() => { const active = enabled.includes('/release-review'); onChange(active ? enabled.filter(item => item !== '/release-review') : [...enabled, '/release-review']); setNotice(active ? 'Release review returned to drafts.' : 'Release review added to the slash menu.'); }}>{enabled.includes('/release-review') ? 'Return to draft' : 'Activate draft'}</Button></article><p role="status" className="local-notice">{notice || 'Demo skill library · changes apply to this session only.'}</p></div>;
+  const { request } = useBackend();
+  const [skills, setSkills] = useState<WorkspaceSkill[]>([]);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [prompts, setPrompts] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const workspaces = await request<Array<{ id: string }>>("workspaces?select=id&order=created_at.asc&limit=1");
+        if (!workspaces[0]) throw new Error("No workspace is available for this account.");
+        const rows = await request<WorkspaceSkill[]>("skills?select=id,workspace_id,name,command,description,instructions,is_enabled,version&workspace_id=eq." + workspaces[0].id + "&order=name.asc");
+        if (!cancelled) {
+          setWorkspaceId(workspaces[0].id);
+          setSkills(rows);
+          setPrompts(Object.fromEntries(rows.map(skill => [skill.command, skill.instructions])));
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load workspace skills.");
+      } finally { if (!cancelled) setLoading(false); }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [request]);
+
+  async function savePrompt(skill: WorkspaceSkill) {
+    const value = prompts[skill.command] ?? skill.instructions;
+    try {
+      await request("skills?id=eq." + skill.id, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ instructions: value, version: skill.version + 1, updated_at: new Date().toISOString() }) });
+      setSkills(current => current.map(item => item.id === skill.id ? { ...item, instructions: value, version: item.version + 1 } : item));
+      setEditing(null);
+      setNotice("Saved " + skill.name + " to your workspace.");
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save skill instructions.");
+    }
+  }
+
+  return <div className="expanded-page"><div className="mb-4"><h3>Workspace skills</h3><p className="text-sm text-zinc-500">These instructions are saved in Supabase and can be called from the editor using their slash command.</p></div>{error && <p role="alert" className="mb-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{loading ? <p className="py-8 text-sm text-zinc-500">Loading saved skills…</p> : skills.length === 0 ? <div className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">No skills are configured for this workspace.</div> : <div className="skills-grid">{skills.map(skill => <article className="skill-card" key={skill.id}><header><b>{skill.name}</b><span>Workspace</span></header><code>{skill.command}</code><p>{skill.description}</p><div className="context-actions"><Button role="switch" aria-checked={enabled.includes(skill.command)} aria-label={"Enable " + skill.name} variant={enabled.includes(skill.command) ? "editorActive" : "outline"} size="sm" onClick={() => onChange(enabled.includes(skill.command) ? enabled.filter(item => item !== skill.command) : [...enabled, skill.command])}>{enabled.includes(skill.command) ? "Active" : "Disabled"}</Button><Button size="sm" variant="ghost" onClick={() => setEditing(editing === skill.command ? null : skill.command)}>Edit instructions</Button></div>{editing === skill.command && <label className="settings-field">Agent instructions<textarea value={prompts[skill.command] ?? skill.instructions} onChange={event => setPrompts(current => ({ ...current, [skill.command]: event.target.value }))}/><Button variant="editorActive" size="sm" onClick={() => void savePrompt(skill)}>Save instructions</Button></label>}</article>)}</div>}<p role="status" className="local-notice">{notice}</p></div>;
 }
 export function SeoSurface() {
   const [title, setTitle] = useState('Orbit — Money made clear'); const [description, setDescription] = useState('A calm place for spending, saving, and everything ahead.'); const [image, setImage] = useState(''); const [card, setCard] = useState('summary_large_image'); const [indexing, setIndexing] = useState(true); const [llms, setLlms] = useState(false); const [preview, setPreview] = useState(false); const [notice, setNotice] = useState('');
   return <div className="expanded-page"><div className="seo-previews"><div className="search-preview"><small>GOOGLE SEARCH · orbit-finance.lovable.app</small><b>{title}</b><p>{description}</p></div><div className="social-preview"><div className="social-cover">ORBIT</div><small>SOCIAL PREVIEW · {card}</small><b>{title}</b><p>{description}</p></div></div><h3>Metadata</h3><label className="settings-field">Page title<input value={title} onChange={e => setTitle(e.target.value)}/></label><label className="settings-field">Meta description<textarea value={description} onChange={e => setDescription(e.target.value)}/></label><label className="settings-field">OG image URL<input type="url" value={image} onChange={e => setImage(e.target.value)} placeholder="https://example.com/cover.jpg"/></label><label className="settings-field">Twitter card type<select value={card} onChange={e => setCard(e.target.value)}><option>summary_large_image</option><option>summary</option></select></label><Toggle label="Allow AI search indexing" value={indexing} onChange={setIndexing}/><Toggle label="Generate llms.txt" value={llms} onChange={setLlms}/><div className="context-actions"><Button variant="outline" size="sm" disabled={!llms} onClick={() => setPreview(!preview)}>Preview llms.txt</Button><Button variant="editorActive" size="sm" onClick={() => setNotice(`Demo audit: ${title ? 'title present' : 'title missing'} · ${description ? 'description present' : 'description missing'} · ${image ? 'cover URL set' : 'cover URL missing'}`)}>Audit SEO with AI</Button><Button variant="outline" size="sm" onClick={() => setNotice('Metadata saved in this session only.')}>Save metadata</Button></div>{preview && llms && <pre className="terminal-output">{`# ${title}\n\n${description}\n\n## Pages\n- /: Overview\n- /dashboard: Weekly insights`}</pre>}<p className="local-notice" role="status">{notice || 'Preview settings only. Published metadata and crawler access are unchanged.'}</p></div>;
 }
-export function AiSurface() {
-  const [instructions, setInstructions] = useState('Preserve the compact editor. Use typed local state and accessible controls. Keep credentials out of client code.'); const [notice, setNotice] = useState('');
-  return <div className="expanded-page"><h3>Model routing</h3><div className="routing-row"><Activity size={19}/><div><b>Lovable AI Gateway</b><small>No live model connected · frontend simulation</small></div><span className="connector-live">Demo</span></div><div className="metrics-row">{[['Tokens processed', '248k'], ['Prompt cache hits', '84%'], ['Response latency', '1.1s']].map(([label, value]) => <article key={label}><small>{label}</small><b>{value}</b><em>Sample metric</em></article>)}</div><details open><summary>System prompt & agent instructions</summary><label className="settings-field">Project steering<textarea value={instructions} onChange={e => setInstructions(e.target.value)}/></label><Button variant="editorActive" size="sm" onClick={() => setNotice('Instructions saved for this session.')}>Save instructions</Button></details><p className="local-notice" role="status">{notice || 'No AI requests are made.'}</p></div>;
+export function AiSurface({ projectId }: { projectId: string }) {
+  const { request } = useBackend();
+  const [apiKey, setApiKey] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
+  const [instructions, setInstructions] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const projects = await request<Array<{ instructions: string | null }>>("projects?select=instructions&id=eq." + projectId);
+        const secrets = await request<Array<{ secret_key: string }>>("project_secrets?select=secret_key&project_id=eq." + projectId + "&secret_key=eq.OPENROUTER_API_KEY");
+        if (!cancelled) {
+          setInstructions(projects[0]?.instructions ?? "");
+          setKeySaved(secrets.length > 0);
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load AI settings.");
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, request]);
+
+  async function saveKey() {
+    if (!apiKey.trim()) return;
+    setBusy(true); setError(null); setNotice("");
+    try {
+      await request("rpc/store_project_secret", { method: "POST", body: JSON.stringify({ p_project_id: projectId, p_secret_key: "OPENROUTER_API_KEY", p_secret_value: apiKey.trim() }) });
+      setApiKey(""); setKeySaved(true); setNotice("OpenRouter credential encrypted and saved to Supabase Vault.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save provider credential.");
+    } finally { setBusy(false); }
+  }
+
+  async function saveInstructions() {
+    setBusy(true); setError(null); setNotice("");
+    try {
+      await request("projects?id=eq." + projectId, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ instructions, updated_at: new Date().toISOString() }) });
+      setNotice("Project instructions saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save project instructions.");
+    } finally { setBusy(false); }
+  }
+
+  return <div className="expanded-page"><h3>AI provider</h3><p className="text-sm text-zinc-500">Build, Plan and Chat use the server-side Figurable agent. The default model route is OpenRouter's free-model router; provider availability and rate limits still apply.</p><section className="mt-4 rounded-xl border border-zinc-200 bg-white p-4"><div className="flex items-center justify-between gap-3"><div><b className="text-sm">OpenRouter API key</b><p className="mt-1 text-xs leading-5 text-zinc-500">Saved in Supabase Vault and read only by the Edge Function. It is never returned to the browser.</p></div><span className={keySaved ? "status-good" : "status-muted"}>{keySaved ? "Credential saved" : "Not configured"}</span></div><label className="settings-field mt-3">API key<input type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={keySaved ? "Enter a replacement key to rotate it" : "Paste API key"} /></label><Button variant="editorActive" size="sm" disabled={busy || !apiKey.trim()} onClick={() => void saveKey()}>{busy ? "Saving…" : keySaved ? "Replace encrypted key" : "Save encrypted key"}</Button></section><details open className="mt-5"><summary>Persistent project instructions</summary><label className="settings-field">Instructions applied to Build, Plan and Chat<textarea value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Describe project conventions, requirements and things that must not change."/></label><Button variant="editorActive" size="sm" disabled={busy} onClick={() => void saveInstructions()}>{busy ? "Saving…" : "Save project instructions"}</Button></details>{error && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-emerald-700">{notice}</p>}</div>;
 }
 export function SecurityAudit() {
   const [scanned, setScanned] = useState(false); const [csp, setCsp] = useState(false); const [origins, setOrigins] = useState("'self'"); const [notice, setNotice] = useState('');

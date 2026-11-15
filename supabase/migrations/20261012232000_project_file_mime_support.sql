@@ -1,0 +1,1 @@
+update storage.buckets set allowed_mime_types = array(select distinct unnest(coalesce(allowed_mime_types, array[]::text[]) || array['text/csv','application/octet-stream','audio/mp4','video/webm','application/msword','application/vnd.openxmlformats-officedocument.presentationml.presentation'])) where id='project-files';
