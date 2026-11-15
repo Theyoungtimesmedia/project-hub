@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
+import { Route as ShareTokenRouteImport } from './routes/share.$token'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
   path: '/project/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/project/$projectId'
+  fullPaths: '/' | '/dashboard' | '/project/$projectId' | '/share/$token'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/project/$projectId'
-  id: '__root__' | '/' | '/dashboard' | '/project/$projectId'
+  to: '/' | '/dashboard' | '/project/$projectId' | '/share/$token'
+  id: '__root__' | '/' | '/dashboard' | '/project/$projectId' | '/share/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
+  ShareTokenRoute: typeof ShareTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/share/$token': {
+      id: '/share/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
+  ShareTokenRoute: ShareTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
