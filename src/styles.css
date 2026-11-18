@@ -528,3 +528,18 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .project-gallery { padding-top:8px; }
 @media(max-width:900px) { .dashboard-sidebar { width:250px; } .dashboard-main { margin-left:250px; padding-inline:16px; } .dashboard-background { left:250px; } .launchpad { padding-top:125px; min-height:calc(100vh - 100px); } .projects-section { margin-inline:-16px; } }
 @media(max-width:640px) { .dashboard-sidebar { width:290px; } .dashboard-main { margin-left:0; padding:0 12px; } .dashboard-background { inset:0; } .launchpad { min-height:72vh; padding:125px 8px 48px; } .launchpad h1 { font-size:28px; } .hero-composer { border-radius:24px!important; } .projects-section { margin-inline:-12px; border-radius:24px 24px 0 0; padding:20px 14px 34px; } .gallery-toolbar .toolbar-actions { margin-left:0; width:100%; flex-wrap:wrap; } }
+
+/* Refined light polish: hairline borders, quiet elevation, tighter type */
+.editor-light{--border:oklch(0 0 0/.075);--input:oklch(0 0 0/.1);--background:oklch(.984 .002 90);--surface-strong:oklch(.975 .002 90);--shadow-hair:0 1px 2px oklch(0 0 0/.03),0 4px 16px -2px oklch(0 0 0/.045)}
+.editor-light .editor-shell,.editor-light.editor-shell{font-feature-settings:"ss01","cv11";-webkit-font-smoothing:antialiased;letter-spacing:-.006em}
+.editor-light .editor-topbar,.editor-light .preview-navigation{background:color-mix(in oklab,var(--surface) 78%,transparent);backdrop-filter:blur(14px) saturate(150%)}
+.editor-light .chat-composer{border-color:var(--input);box-shadow:var(--shadow-hair);border-radius:20px}
+.editor-light .project-toolbar,.editor-light .route-pill,.editor-light .tool-list button{border-color:var(--border)!important;box-shadow:0 1px 1px oklch(0 0 0/.02)}
+.editor-light .skills-menu{border-color:var(--border);box-shadow:0 16px 40px -8px oklch(0 0 0/.14),0 2px 6px oklch(0 0 0/.04);backdrop-filter:blur(18px)}
+.editor-light .user-message{letter-spacing:-.01em}
+.editor-light .turn-summary{color:color-mix(in oklab,var(--foreground) 88%,transparent)}
+.ai-provider-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px}
+.ai-provider-card{border:1px solid var(--border);border-radius:14px;background:var(--surface,var(--card));padding:14px;box-shadow:var(--shadow-hair,none);transition:border-color .15s,box-shadow .15s}
+.ai-provider-card.is-active{border-color:color-mix(in oklab,var(--primary) 45%,transparent);box-shadow:0 0 0 3px color-mix(in oklab,var(--primary) 10%,transparent)}
+.ai-provider-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
+.ai-provider-card header div{display:grid;gap:2px}.ai-provider-card header small{color:var(--muted-foreground);font-family:var(--font-mono);font-size:10px}

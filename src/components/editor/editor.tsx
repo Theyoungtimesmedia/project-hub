@@ -100,7 +100,7 @@ export function Editor({ projectId, initialPrompt, initialMode = "Build" }: { pr
     setProjectError(null);
     try {
       const result = await invoke<{ turnId: string; mode: Mode; status: string; summary: string; result?: { preview_html?: string | null }; plan?: Message["planPayload"] }>("figurable-agent", {
-        projectId, mode: requestedMode, prompt: text, selectedContext,
+        projectId, mode: requestedMode, prompt: text, selectedContext, provider: window.localStorage.getItem("figurable-ai-provider:" + projectId) ?? "",
       });
       const rows = await request<StoredChatTurn[]>(
         "chat_turns?select=id,mode,prompt,summary,status,created_at,result_payload,plan_payload&id=eq." + result.turnId

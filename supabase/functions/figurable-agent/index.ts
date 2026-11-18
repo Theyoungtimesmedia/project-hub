@@ -39,12 +39,10 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const envModelKey = Deno.env.get("OPENROUTER_API_KEY");
-  const model = Deno.env.get("FIGURABLE_MODEL") || "openrouter/free";
 
   if (!token || !supabaseUrl || !anonKey || !serviceKey) return respond({ error: "A valid signed-in session is required." }, 401);
 
-  let body: { projectId?: string; mode?: string; prompt?: string; selectedContext?: string | null };
+  let body: { projectId?: string; mode?: string; prompt?: string; selectedContext?: string | null; provider?: string };
   try { body = await req.json(); } catch { return respond({ error: "Request body must be valid JSON." }, 400); }
   const projectId = body.projectId;
   const prompt = body.prompt?.trim();
@@ -64,9 +62,18 @@ Deno.serve(async (req) => {
     .eq("id", projectId).maybeSingle();
   if (projectError || !project) return respond({ error: "Project not found or you do not have access to it." }, 404);
 
-  const { data: vaultModelKey } = await admin.rpc("read_project_secret", { p_project_id: projectId, p_secret_key: "OPENROUTER_API_KEY" });
-  const modelKey = typeof vaultModelKey === "string" && vaultModelKey.trim() ? vaultModelKey : envModelKey;
-  if (!modelKey) return respond({ error: "AI is not configured. Add an OpenRouter API key in this project's More → AI settings. The key is encrypted in Supabase Vault." }, 503);
+  const readKey = async (name: string) => {
+    const { data } = await admin.rpc("read_project_secret", { p_project_id: projectId, p_secret_key: name });
+    return typeof data === "string" && data.trim() ? data.trim() : (Deno.env.get(name) ?? "");
+  };
+  const keys = { gemini: await readKey("GEMINI_API_KEY"), openai: await readKey("OPENAI_API_KEY"), openrouter: await readKey("OPENROUTER_API_KEY") };
+  const wanted = (body.provider ?? "") as keyof typeof keys;
+  const provider = (wanted in keys && keys[wanted]) ? wanted : (["gemini", "openai", "openrouter"] as const).find(name => keys[name]);
+  if (!provider) return respond({ error: "AI is not configured. Add a Gemini or OpenAI API key in this project's More → AI settings." }, 503);
+  const modelKey = keys[provider];
+  const model = provider === "gemini" ? (Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash")
+    : provider === "openai" ? (Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini")
+    : (Deno.env.get("FIGURABLE_MODEL") || "openrouter/free");
 
   const { data: knowledge } = await userClient.from("project_knowledge")
     .select("title,content").eq("project_id", projectId).eq("is_active", true).order("updated_at", { ascending: false }).limit(12);
@@ -78,7 +85,7 @@ Deno.serve(async (req) => {
 
   const { data: turn, error: turnError } = await admin.from("chat_turns").insert({
     project_id: projectId, user_id: authData.user.id, mode, prompt, status: "running",
-    provider: "openrouter", model, started_at: new Date().toISOString(),
+    provider, model, started_at: new Date().toISOString(),
   }).select("id").single();
   if (turnError || !turn) return respond({ error: "Could not create the execution record. Check the database migration and RLS configuration." }, 500);
 
@@ -110,14 +117,29 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const aiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + modelKey, "Content-Type": "application/json", "HTTP-Referer": "https://figurable.dev", "X-Title": "Figurable" },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: userPrompt }], temperature: mode === "Build" ? 0.2 : 0.4 }),
-    });
-    const aiPayload = await aiResponse.json().catch(() => ({}));
-    if (!aiResponse.ok) throw new Error(String(aiPayload.error?.message ?? "AI provider returned HTTP " + aiResponse.status + "."));
-    const answer = aiPayload.choices?.[0]?.message?.content;
+    const temperature = mode === "Build" ? 0.2 : 0.4;
+    let answer: unknown;
+    if (provider === "gemini") {
+      const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent", {
+        method: "POST",
+        headers: { "x-goog-api-key": modelKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: userPrompt }] }], generationConfig: { temperature, ...(mode === "Chat" ? {} : { responseMimeType: "application/json" }) } }),
+      });
+      const aiPayload = await aiResponse.json().catch(() => ({}));
+      if (!aiResponse.ok) throw new Error(String(aiPayload.error?.message ?? "Gemini returned HTTP " + aiResponse.status + "."));
+      answer = (aiPayload.candidates?.[0]?.content?.parts ?? []).map((part: { text?: string }) => part.text ?? "").join("");
+    } else {
+      const url = provider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
+      const headers: Record<string, string> = { Authorization: "Bearer " + modelKey, "Content-Type": "application/json" };
+      if (provider === "openrouter") { headers["HTTP-Referer"] = "https://figurable.dev"; headers["X-Title"] = "Figurable"; }
+      const aiResponse = await fetch(url, {
+        method: "POST", headers,
+        body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: userPrompt }], temperature, ...(provider === "openai" && mode !== "Chat" ? { response_format: { type: "json_object" } } : {}) }),
+      });
+      const aiPayload = await aiResponse.json().catch(() => ({}));
+      if (!aiResponse.ok) throw new Error(String(aiPayload.error?.message ?? "AI provider returned HTTP " + aiResponse.status + "."));
+      answer = aiPayload.choices?.[0]?.message?.content;
+    }
     if (typeof answer !== "string" || !answer.trim()) throw new Error("The AI provider returned an empty response.");
 
     let summary = answer;
