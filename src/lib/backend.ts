@@ -214,7 +214,9 @@ export function BackendProvider({ children }: { children: ReactNode }) {
   }, [authorizedFetch]);
 
   const invoke = useCallback(async <T,>(name: string, body: Record<string, unknown> = {}): Promise<T> => {
-    const response = await authorizedFetch(SUPABASE_URL + "/functions/v1/" + encodeURIComponent(name), {
+    // The AI agent runs inside this app; other functions still live on Supabase.
+    const url = name === "figurable-agent" ? "/api/agent" : SUPABASE_URL + "/functions/v1/" + encodeURIComponent(name);
+    const response = await authorizedFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

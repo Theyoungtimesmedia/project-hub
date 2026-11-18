@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentRoute = ApiAgentRouteImport.update({
+  id: '/api/agent',
+  path: '/api/agent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
@@ -38,12 +44,14 @@ const ShareTokenRoute = ShareTokenRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/api/agent': typeof ApiAgentRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/api/agent': typeof ApiAgentRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/share/$token': typeof ShareTokenRoute
 }
@@ -51,20 +59,30 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/api/agent': typeof ApiAgentRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/project/$projectId' | '/share/$token'
+  fullPaths:
+    '/' | '/dashboard' | '/api/agent' | '/project/$projectId' | '/share/$token'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/project/$projectId' | '/share/$token'
-  id: '__root__' | '/' | '/dashboard' | '/project/$projectId' | '/share/$token'
+  to:
+    '/' | '/dashboard' | '/api/agent' | '/project/$projectId' | '/share/$token'
+  id:
+    | '__root__'
+    | '/'
+    | '/dashboard'
+    | '/api/agent'
+    | '/project/$projectId'
+    | '/share/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
+  ApiAgentRoute: typeof ApiAgentRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
   ShareTokenRoute: typeof ShareTokenRoute
 }
@@ -83,6 +101,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agent': {
+      id: '/api/agent'
+      path: '/api/agent'
+      fullPath: '/api/agent'
+      preLoaderRoute: typeof ApiAgentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/project/$projectId': {
@@ -105,6 +130,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
+  ApiAgentRoute: ApiAgentRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
   ShareTokenRoute: ShareTokenRoute,
 }
